@@ -27,3 +27,6 @@ gemmi/
 *_molid.csv
 *_molid.tsv
 *_molid.tree
+
+# Test CIF data (downloaded from PDB in CI)
+tests/data/from_pdb/
