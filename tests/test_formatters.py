@@ -3,7 +3,7 @@
 import json
 from collections import OrderedDict
 
-from cifmolid.output import to_csv, to_json, to_table, to_tsv
+from cifmolid.formatters import to_csv, to_json, to_table, to_tsv
 
 
 class TestOutputFormats:

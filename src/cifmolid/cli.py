@@ -10,9 +10,9 @@ import typer
 from rich.console import Console
 
 from cifmolid import __version__
-from cifmolid.cif import assign_molecule_id
-from cifmolid.core import DEFAULT_COVALENT_TYPES
-from cifmolid.output import write_output
+from cifmolid.formatters import write_extended_output, write_output
+from cifmolid.graph import DEFAULT_COVALENT_TYPES
+from cifmolid.mmcif import assign_extended_ids, assign_molecule_id
 
 app = typer.Typer(
     name="cifmolid",
@@ -31,6 +31,7 @@ class OutputFormat(str, Enum):
     csv = "csv"
     tsv = "tsv"
     table = "table"
+    tree = "tree"
 
 
 def version_callback(value: bool) -> None:
@@ -84,9 +85,21 @@ def assign(
             help="Suppress status messages (useful with stdout output)",
         ),
     ] = False,
+    extended: Annotated[
+        bool,
+        typer.Option(
+            "--extended",
+            "-e",
+            help="Include all IDs: chain_entity, pn_unit_id, pn_unit_entity, molecule_entity",
+        ),
+    ] = False,
 ) -> None:
     """Assign molecule_id to an mmCIF file based on covalent connectivity."""
     covalent_types = {t.strip().lower() for t in conn_types.split(",") if t.strip()}
+
+    # Tree format requires extended mode
+    if fmt == OutputFormat.tree:
+        extended = True
 
     # Determine output path
     is_stdout = output_file == "-"
@@ -97,18 +110,31 @@ def assign(
         output_path = "-" if is_stdout else Path(output_file)
 
     try:
-        if fmt == OutputFormat.cif:
-            # Write mmCIF with molecule_id
-            mapping = assign_molecule_id(
-                input_file, None if is_stdout else output_path, covalent_types
-            )
-            if is_stdout:
-                err_console.print("[red]Error:[/red] CIF format cannot be written to stdout")
-                raise typer.Exit(1)
+        if extended:
+            # Extended mode: include all IDs
+            if fmt == OutputFormat.cif:
+                result = assign_extended_ids(
+                    input_file, None if is_stdout else output_path, covalent_types
+                )
+                if is_stdout:
+                    err_console.print("[red]Error:[/red] CIF format cannot be written to stdout")
+                    raise typer.Exit(1)
+            else:
+                result = assign_extended_ids(input_file, None, covalent_types)
+                write_extended_output(result, output_path, fmt.value)
+            mapping = result.molecule_id_mapping
         else:
-            # Get mapping only, then write in requested format
-            mapping = assign_molecule_id(input_file, None, covalent_types)
-            write_output(mapping, output_path, fmt.value)
+            # Standard mode: molecule_id only
+            if fmt == OutputFormat.cif:
+                mapping = assign_molecule_id(
+                    input_file, None if is_stdout else output_path, covalent_types
+                )
+                if is_stdout:
+                    err_console.print("[red]Error:[/red] CIF format cannot be written to stdout")
+                    raise typer.Exit(1)
+            else:
+                mapping = assign_molecule_id(input_file, None, covalent_types)
+                write_output(mapping, output_path, fmt.value)
     except ValueError as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from None

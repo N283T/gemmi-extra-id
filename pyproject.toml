@@ -4,16 +4,16 @@ version = "0.1.0"
 description = "Assign molecule_id to mmCIF files based on covalent connectivity"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["mmcif", "crystallography", "structural-biology", "gemmi", "molecule-id"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Chemistry",
 ]
@@ -23,12 +23,6 @@ dependencies = [
     "rich>=13.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "ruff>=0.4",
-    "nox>=2024.4",
-]
 
 [project.scripts]
 cifmolid = "cifmolid.cli:app"
@@ -48,7 +42,7 @@ testpaths = ["tests"]
 addopts = ["-ra", "-q"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 100
 src = ["src", "tests"]
 exclude = ["atomworks", "gemmi"]
@@ -58,3 +52,13 @@ select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
 
 [tool.ruff.format]
 quote-style = "double"
+
+
+[dependency-groups]
+dev = [
+    "atomworks>=2.2.0",
+    "nox>=2024.4",
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "ty>=0.0.1a4",
+]
