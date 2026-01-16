@@ -387,9 +387,12 @@ class TestSwapAuthAsymId:
         doc = gemmi.cif.read(str(output_file))
         block = doc.sole_block()
 
-        # orig_auth_asym_id column should not exist
-        orig_col = block.find_loop("_atom_site.orig_auth_asym_id")
-        assert orig_col is None, "orig_auth_asym_id should not exist when preserve_original=False"
+        # orig_auth_asym_id column should not exist in atom_site loop
+        atom_site_loop = block.find_loop("_atom_site.label_asym_id").get_loop()
+        tags = list(atom_site_loop.tags)
+        assert "_atom_site.orig_auth_asym_id" not in tags, (
+            "orig_auth_asym_id should not exist when preserve_original=False"
+        )
 
     @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
     def test_swap_with_pn_unit_id(self, tmp_path: Path) -> None:
