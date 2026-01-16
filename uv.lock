@@ -380,6 +380,15 @@ dev = [
     { name = "ruff" },
     { name = "ty" },
 ]
+ref = [
+    { name = "atomworks" },
+]
+test = [
+    { name = "nox" },
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "ty" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -391,6 +400,13 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "atomworks", specifier = ">=2.2.0" },
+    { name = "nox", specifier = ">=2024.4" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "ruff", specifier = ">=0.4" },
+    { name = "ty", specifier = ">=0.0.1a4" },
+]
+ref = [{ name = "atomworks", specifier = ">=2.2.0" }]
+test = [
     { name = "nox", specifier = ">=2024.4" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.4" },
