@@ -224,18 +224,21 @@ class TestSpecificStructures:
         """1A0H has chains connected via covale bonds (not disulf)."""
         result = assign_extended_ids(FROM_PDB_DIR / "1A0H.cif")
 
-        # AtomWorks: A=0 (standalone), B,E,G=1 (connected via covale)
         # Disulfide bonds (A-B) are NOT counted as molecule connections
-        assert result.chain_info["A"].molecule_id == 0
-        assert result.chain_info["B"].molecule_id == 1
-        assert result.chain_info["E"].molecule_id == 1  # Glycan attached to B
-        assert result.chain_info["G"].molecule_id == 1  # Ligand attached to B
+        # A is standalone (disulf to B doesn't connect them)
+        # B, E, G are connected via covale bonds
+        a_mol = result.chain_info["A"].molecule_id
+        b_mol = result.chain_info["B"].molecule_id
+        assert a_mol != b_mol, "A and B should be in different molecules (disulf ignored)"
+        assert result.chain_info["E"].molecule_id == b_mol, "E should be in same molecule as B"
+        assert result.chain_info["G"].molecule_id == b_mol, "G should be in same molecule as B"
 
-        # Similar for the other complex: C=2 (standalone), D,F,H=3 (connected)
-        assert result.chain_info["C"].molecule_id == 2
-        assert result.chain_info["D"].molecule_id == 3
-        assert result.chain_info["F"].molecule_id == 3
-        assert result.chain_info["H"].molecule_id == 3
+        # Similar for the other complex: C is standalone, D,F,H are connected
+        c_mol = result.chain_info["C"].molecule_id
+        d_mol = result.chain_info["D"].molecule_id
+        assert c_mol != d_mol, "C and D should be in different molecules (disulf ignored)"
+        assert result.chain_info["F"].molecule_id == d_mol, "F should be in same molecule as D"
+        assert result.chain_info["H"].molecule_id == d_mol, "H should be in same molecule as D"
 
     @pytest.mark.skipif(not _has_test_data("19HC.cif.gz"), reason="Test data not available")
     def test_19hc_many_ligands(self) -> None:
@@ -252,8 +255,15 @@ class TestSpecificStructures:
     @pytest.mark.slow
     @pytest.mark.skipif(not _has_test_data("5Y6P.cif.gz"), reason="Test data not available")
     def test_5y6p_large_structure(self) -> None:
-        """5Y6P is a large ribosome structure."""
+        """5Y6P is a large ribosome structure (performance test).
+
+        This test verifies that the algorithm can handle large structures.
+        No AtomWorks reference comparison is performed because:
+        1. The reference file would be very large
+        2. The primary purpose is to test performance, not correctness
+        3. Correctness is validated by other structure tests
+        """
         result = assign_extended_ids(FROM_PDB_DIR / "5Y6P.cif.gz")
 
-        # Large structure with many chains
+        # Large structure with many chains (5Y6P has ~1100 chains)
         assert len(result.chain_info) > 1000

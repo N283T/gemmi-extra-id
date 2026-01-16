@@ -126,6 +126,31 @@ With `--extended`, additional IDs are computed:
 | `pn_unit_entity` | Entity ID for the pn_unit |
 | `molecule_entity` | Entity ID for the molecule (minimum entity_id when mixed) |
 
+## AtomWorks Compatibility
+
+By default, gemmi-extra-id uses only `covale` (covalent) bond types for molecule grouping, matching [AtomWorks](https://github.com/rosettacommons/atomworks) behavior. Disulfide bonds (`disulf`) are **not** considered as intermolecular connections.
+
+This means chains connected only by disulfide bonds will have different `molecule_id` values:
+
+```python
+# 1A0H: Chain A and B are connected by disulfide bond
+# But they are assigned different molecule_ids
+result = assign_extended_ids("1A0H.cif")
+assert result.chain_info["A"].molecule_id != result.chain_info["B"].molecule_id
+```
+
+To include disulfide bonds in molecule grouping, specify `--conn-types`:
+
+```bash
+gemmi-extra-id assign input.cif --conn-types covale,disulf
+```
+
+Or in Python:
+
+```python
+mapping = assign_molecule_id("input.cif", covalent_types={"covale", "disulf"})
+```
+
 ## Development
 
 ```bash
