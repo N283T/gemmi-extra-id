@@ -71,3 +71,82 @@ class TestCLI:
 
         assert result.exit_code == 0
         assert output_file.exists()
+
+
+class TestSwapOption:
+    """Tests for --swap CLI option."""
+
+    @pytest.mark.skipif(not (FROM_PDB_DIR / "148L.cif").exists(), reason="Test data not available")
+    def test_swap_molecule_id(self, tmp_path: Path) -> None:
+        """--swap molecule_id replaces auth_asym_id."""
+        input_file = FROM_PDB_DIR / "148L.cif"
+        output_file = tmp_path / "output.cif"
+
+        result = runner.invoke(
+            app, ["assign", str(input_file), str(output_file), "--swap", "molecule_id"]
+        )
+
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        assert output_file.exists()
+
+    @pytest.mark.skipif(not (FROM_PDB_DIR / "148L.cif").exists(), reason="Test data not available")
+    def test_swap_label_asym_id(self, tmp_path: Path) -> None:
+        """--swap label_asym_id replaces auth_asym_id with label_asym_id."""
+        input_file = FROM_PDB_DIR / "148L.cif"
+        output_file = tmp_path / "output.cif"
+
+        result = runner.invoke(
+            app, ["assign", str(input_file), str(output_file), "--swap", "label_asym_id"]
+        )
+
+        assert result.exit_code == 0, f"Command failed: {result.output}"
+        assert output_file.exists()
+
+    @pytest.mark.skipif(not (FROM_PDB_DIR / "148L.cif").exists(), reason="Test data not available")
+    def test_swap_invalid_target(self, tmp_path: Path) -> None:
+        """--swap with invalid target shows error."""
+        input_file = FROM_PDB_DIR / "148L.cif"
+        output_file = tmp_path / "output.cif"
+
+        result = runner.invoke(
+            app, ["assign", str(input_file), str(output_file), "--swap", "invalid"]
+        )
+
+        assert result.exit_code != 0
+        assert "Invalid" in result.output or "Error" in result.output
+
+    @pytest.mark.skipif(not (FROM_PDB_DIR / "148L.cif").exists(), reason="Test data not available")
+    def test_swap_incompatible_with_json_format(self, tmp_path: Path) -> None:
+        """--swap cannot be used with non-CIF output format."""
+        input_file = FROM_PDB_DIR / "148L.cif"
+        output_file = tmp_path / "output.json"
+
+        result = runner.invoke(
+            app,
+            ["assign", str(input_file), str(output_file), "-f", "json", "--swap", "molecule_id"],
+        )
+
+        assert result.exit_code != 0
+
+    @pytest.mark.skipif(not (FROM_PDB_DIR / "148L.cif").exists(), reason="Test data not available")
+    def test_swap_incompatible_with_stdout(self) -> None:
+        """--swap cannot be used with stdout output."""
+        input_file = FROM_PDB_DIR / "148L.cif"
+
+        result = runner.invoke(app, ["assign", str(input_file), "-", "--swap", "molecule_id"])
+
+        assert result.exit_code != 0
+
+    @pytest.mark.skipif(not (FROM_PDB_DIR / "148L.cif").exists(), reason="Test data not available")
+    def test_swap_with_quiet(self, tmp_path: Path) -> None:
+        """--swap works with --quiet option."""
+        input_file = FROM_PDB_DIR / "148L.cif"
+        output_file = tmp_path / "output.cif"
+
+        result = runner.invoke(
+            app, ["assign", str(input_file), str(output_file), "--swap", "molecule_id", "-q"]
+        )
+
+        assert result.exit_code == 0
+        assert output_file.exists()
+        assert "Wrote" not in result.output  # quiet mode

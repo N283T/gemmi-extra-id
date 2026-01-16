@@ -12,7 +12,12 @@ from rich.console import Console
 from gemmi_extra_id import __version__
 from gemmi_extra_id.formatters import write_extended_output, write_output
 from gemmi_extra_id.graph import DEFAULT_COVALENT_TYPES
-from gemmi_extra_id.mmcif import assign_extended_ids, assign_molecule_id
+from gemmi_extra_id.mmcif import (
+    VALID_SWAP_TARGETS,
+    assign_extended_ids,
+    assign_molecule_id,
+    swap_auth_asym_id,
+)
 
 app = typer.Typer(
     name="gemmi-extra-id",
@@ -93,6 +98,17 @@ def assign(
             help="Include all IDs: chain_entity, pn_unit_id, pn_unit_entity, molecule_entity",
         ),
     ] = False,
+    swap: Annotated[
+        str | None,
+        typer.Option(
+            "--swap",
+            "-s",
+            help=(
+                "Swap auth_asym_id with specified ID. "
+                f"Options: {', '.join(sorted(VALID_SWAP_TARGETS))}"
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Assign molecule_id to an mmCIF file based on covalent connectivity."""
     covalent_types = {t.strip().lower() for t in conn_types.split(",") if t.strip()}
@@ -109,8 +125,34 @@ def assign(
     else:
         output_path = "-" if is_stdout else Path(output_file)
 
+    # Validate --swap option
+    if swap is not None:
+        if swap not in VALID_SWAP_TARGETS:
+            err_console.print(
+                f"[red]Error:[/red] Invalid --swap value: {swap}. "
+                f"Valid options: {', '.join(sorted(VALID_SWAP_TARGETS))}"
+            )
+            raise typer.Exit(1)
+
+        if fmt != OutputFormat.cif:
+            err_console.print("[red]Error:[/red] --swap option only works with CIF output format")
+            raise typer.Exit(1)
+
+        if is_stdout:
+            err_console.print("[red]Error:[/red] --swap option cannot write to stdout")
+            raise typer.Exit(1)
+
     try:
-        if extended:
+        if swap is not None:
+            # Swap mode: replace auth_asym_id with specified ID
+            result = swap_auth_asym_id(
+                input_file,
+                output_path,
+                swap_with=swap,
+                covalent_types=covalent_types,
+            )
+            mapping = result.molecule_id_mapping
+        elif extended:
             # Extended mode: include all IDs
             if fmt == OutputFormat.cif:
                 result = assign_extended_ids(
@@ -147,6 +189,8 @@ def assign(
             f"Assigned [cyan]{n_molecules}[/cyan] molecule_id(s) "
             f"to [cyan]{n_chains}[/cyan] chain(s)"
         )
+        if swap is not None:
+            console.print(f"Swapped auth_asym_id with [cyan]{swap}[/cyan]")
 
 
 if __name__ == "__main__":
