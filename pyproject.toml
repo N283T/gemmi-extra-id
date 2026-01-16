@@ -58,10 +58,16 @@ quote-style = "double"
 
 
 [dependency-groups]
-dev = [
-    "atomworks>=2.2.0",
+test = [
     "nox>=2024.4",
     "pytest>=8.0",
     "ruff>=0.4",
     "ty>=0.0.1a4",
+]
+ref = [
+    "atomworks>=2.2.0",
+]
+dev = [
+    { include-group = "test" },
+    { include-group = "ref" },
 ]
