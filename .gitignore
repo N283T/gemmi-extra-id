@@ -30,3 +30,7 @@ gemmi/
 
 # Test CIF data (downloaded from PDB in CI)
 tests/data/from_pdb/
+
+# Claude Code
+.claude/
+CLAUDE.md
