@@ -1,23 +1,25 @@
 """
-cifmolid - Assign molecule_id to mmCIF files based on covalent connectivity.
+gemmi_extra_id - Assign extra IDs to mmCIF files using Gemmi.
 
-This package identifies connected components of chains in mmCIF files
-using covalent bond information from _struct_conn.
+This package assigns AtomWorks-compatible IDs to mmCIF files:
+- molecule_id: Connected component of covalent bond graph
+- pn_unit_id: Same-type chains covalently linked
+- chain_entity, pn_unit_entity, molecule_entity: Entity IDs
 
 Example:
-    >>> from cifmolid import assign_molecule_id
+    >>> from gemmi_extra_id import assign_molecule_id
     >>> mapping = assign_molecule_id("input.cif", "output.cif")
     >>> print(mapping)
     OrderedDict([('A', 0), ('B', 0), ('C', 1)])
 
 Extended example with all IDs:
-    >>> from cifmolid import assign_extended_ids
+    >>> from gemmi_extra_id import assign_extended_ids
     >>> result = assign_extended_ids("input.cif", "output.cif")
     >>> for chain, info in result.chain_info.items():
     ...     print(f"{chain}: entity={info.entity_id}, pn_unit={info.pn_unit_id}")
 """
 
-from cifmolid.formatters import (
+from gemmi_extra_id.formatters import (
     to_csv,
     to_extended_csv,
     to_extended_json,
@@ -27,8 +29,13 @@ from cifmolid.formatters import (
     to_table,
     to_tsv,
 )
-from cifmolid.graph import DEFAULT_COVALENT_TYPES, find_components, find_pn_units
-from cifmolid.mmcif import AssignmentResult, ChainInfo, assign_extended_ids, assign_molecule_id
+from gemmi_extra_id.graph import DEFAULT_COVALENT_TYPES, find_components, find_pn_units
+from gemmi_extra_id.mmcif import (
+    AssignmentResult,
+    ChainInfo,
+    assign_extended_ids,
+    assign_molecule_id,
+)
 
 __version__ = "0.1.0"
 __all__ = [

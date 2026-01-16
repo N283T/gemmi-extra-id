@@ -1,4 +1,4 @@
-"""Command-line interface for cifmolid."""
+"""Command-line interface for gemmi_extra_id."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from cifmolid import __version__
-from cifmolid.formatters import write_extended_output, write_output
-from cifmolid.graph import DEFAULT_COVALENT_TYPES
-from cifmolid.mmcif import assign_extended_ids, assign_molecule_id
+from gemmi_extra_id import __version__
+from gemmi_extra_id.formatters import write_extended_output, write_output
+from gemmi_extra_id.graph import DEFAULT_COVALENT_TYPES
+from gemmi_extra_id.mmcif import assign_extended_ids, assign_molecule_id
 
 app = typer.Typer(
-    name="cifmolid",
-    help="Assign molecule_id to mmCIF files based on covalent connectivity.",
+    name="gemmi-extra-id",
+    help="Assign extra IDs to mmCIF files based on covalent connectivity.",
     no_args_is_help=True,
 )
 console = Console()
@@ -37,7 +37,7 @@ class OutputFormat(str, Enum):
 def version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
-        console.print(f"cifmolid {__version__}")
+        console.print(f"gemmi-extra-id {__version__}")
         raise typer.Exit()
 
 

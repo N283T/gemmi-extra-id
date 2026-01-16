@@ -1,9 +1,9 @@
-"""Tests for cifmolid.output module."""
+"""Tests for gemmi_extra_id.output module."""
 
 import json
 from collections import OrderedDict
 
-from cifmolid.formatters import to_csv, to_json, to_table, to_tsv
+from gemmi_extra_id.formatters import to_csv, to_json, to_table, to_tsv
 
 
 class TestOutputFormats:

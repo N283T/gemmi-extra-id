@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import gemmi
 
-from cifmolid.graph import DEFAULT_COVALENT_TYPES, find_components, find_pn_units
+from gemmi_extra_id.graph import DEFAULT_COVALENT_TYPES, find_components, find_pn_units
 
 if TYPE_CHECKING:
     from collections.abc import Set as AbstractSet

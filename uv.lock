@@ -184,41 +184,6 @@ wheels = [
 ]
 
 [[package]]
-name = "cifmolid"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "gemmi" },
-    { name = "rich" },
-    { name = "typer" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "atomworks" },
-    { name = "nox" },
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "ty" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "gemmi", specifier = ">=0.7.4" },
-    { name = "rich", specifier = ">=13.0" },
-    { name = "typer", specifier = ">=0.12" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "atomworks", specifier = ">=2.2.0" },
-    { name = "nox", specifier = ">=2024.4" },
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "ruff", specifier = ">=0.4" },
-    { name = "ty", specifier = ">=0.0.1a4" },
-]
-
-[[package]]
 name = "click"
 version = "8.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -395,6 +360,41 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b6/f9/08ba3e723ccbeaaec24d546c810a13fea69a2bb0fd429eb4aa509967dd74/gemmi-0.7.4-cp314-cp314t-musllinux_1_2_aarch64.whl", hash = "sha256:a4dfa9d1a084945b67a528549339f6c1c08cec5bd9e862ea18b2d75a6bd0f43f", size = 2829322, upload-time = "2025-11-23T12:58:08.867Z" },
     { url = "https://files.pythonhosted.org/packages/22/0f/a4385ecb6eea9d70f8607e9e4e2030b91bc83b721952eda5ddfe091a5340/gemmi-0.7.4-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:f482bc246b4e5d3e8023dee86b2817d8384db4c0c4e6b9d265888681ddbd0f83", size = 3137240, upload-time = "2025-11-23T12:58:11.036Z" },
     { url = "https://files.pythonhosted.org/packages/9b/75/818116a197f0821b91f193be8513fc0b1b192604f68fcfd62c4082a0aa5c/gemmi-0.7.4-cp314-cp314t-win_amd64.whl", hash = "sha256:4d2f30b8936be8cf9b32b6e127580a25f0e712024baf880f71da06ced5a2dde2", size = 2075470, upload-time = "2025-11-23T12:58:13.568Z" },
+]
+
+[[package]]
+name = "gemmi-extra-id"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "gemmi" },
+    { name = "rich" },
+    { name = "typer" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "atomworks" },
+    { name = "nox" },
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "ty" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "gemmi", specifier = ">=0.7.4" },
+    { name = "rich", specifier = ">=13.0" },
+    { name = "typer", specifier = ">=0.12" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "atomworks", specifier = ">=2.2.0" },
+    { name = "nox", specifier = ">=2024.4" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "ruff", specifier = ">=0.4" },
+    { name = "ty", specifier = ">=0.0.1a4" },
 ]
 
 [[package]]

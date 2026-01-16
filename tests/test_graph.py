@@ -1,8 +1,8 @@
-"""Tests for cifmolid.graph module."""
+"""Tests for gemmi_extra_id.graph module."""
 
 from collections import OrderedDict
 
-from cifmolid.graph import find_components, find_pn_units
+from gemmi_extra_id.graph import find_components, find_pn_units
 
 
 class TestFindComponents:

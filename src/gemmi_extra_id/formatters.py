@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections import OrderedDict
 
-    from cifmolid.mmcif import AssignmentResult
+    from gemmi_extra_id.mmcif import AssignmentResult
 
 
 def to_json(mapping: OrderedDict[str, int], indent: int = 2) -> str:
