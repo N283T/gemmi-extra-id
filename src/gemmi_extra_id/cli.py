@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import sys
+
+try:
+    import typer
+    from rich.console import Console
+except ImportError:
+    print(
+        "CLI dependencies (typer, rich) not installed.\n"
+        "Install with: pip install gemmi-extra-id[cli]",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
 from enum import Enum
 from pathlib import Path
 from typing import Annotated
-
-import typer
-from rich.console import Console
 
 from gemmi_extra_id import __version__
 from gemmi_extra_id.formatters import write_extended_output, write_output

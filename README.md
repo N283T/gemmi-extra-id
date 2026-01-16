@@ -6,6 +6,8 @@ This is a [Gemmi](https://gemmi.readthedocs.io/)-based reimplementation of the I
 
 ## Installation
 
+### Library only
+
 ```bash
 pip install gemmi-extra-id
 ```
@@ -16,9 +18,24 @@ Or with uv:
 uv add gemmi-extra-id
 ```
 
+### With CLI
+
+```bash
+pip install gemmi-extra-id[cli]
+```
+
+Or with uv:
+
+```bash
+uv add gemmi-extra-id[cli]
+```
+
 ## Usage
 
 ### Command Line
+
+> **Note:** CLI requires installation with `[cli]` extra.
+
 
 ```bash
 # Assign molecule_id to an mmCIF file
@@ -182,8 +199,8 @@ mapping = assign_molecule_id("input.cif", covalent_types={"covale", "disulf"})
 ## Development
 
 ```bash
-# Install with dev dependencies
-uv pip install -e ".[dev]"
+# Install with CLI and dev dependencies
+uv pip install -e ".[cli]" --group dev
 
 # Run tests
 uv run pytest
