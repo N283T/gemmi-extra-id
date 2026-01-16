@@ -4,6 +4,14 @@ from __future__ import annotations
 
 from collections import OrderedDict, defaultdict
 from collections.abc import Iterable
+from typing import TypeAlias
+
+# Type aliases for clarity
+NodeId: TypeAlias = str
+ComponentId: TypeAlias = int
+Edge: TypeAlias = tuple[NodeId, NodeId]
+EntityType: TypeAlias = str
+PnUnitId: TypeAlias = str  # Comma-separated chain IDs
 
 DEFAULT_COVALENT_TYPES: frozenset[str] = frozenset({"covale", "disulf"})
 
