@@ -8,7 +8,8 @@ from typer.testing import CliRunner
 
 from gemmi_extra_id.cli import app
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = Path(__file__).parent / "data"
+FROM_PDB_DIR = DATA_DIR / "from_pdb"
 runner = CliRunner()
 
 
@@ -34,10 +35,10 @@ class TestCLI:
         result = runner.invoke(app, ["assign", "nonexistent.cif"])
         assert result.exit_code == 2  # typer exits with 2 for invalid path
 
-    @pytest.mark.skipif(not (DATA_DIR / "148L.cif").exists(), reason="Test data not available")
+    @pytest.mark.skipif(not (FROM_PDB_DIR / "148L.cif").exists(), reason="Test data not available")
     def test_assign_with_output(self, tmp_path: Path) -> None:
         """assign creates output file."""
-        input_file = DATA_DIR / "148L.cif"
+        input_file = FROM_PDB_DIR / "148L.cif"
         output_file = tmp_path / "output.cif"
 
         result = runner.invoke(app, ["assign", str(input_file), str(output_file)])
@@ -46,11 +47,11 @@ class TestCLI:
         assert output_file.exists()
         assert "Wrote" in result.output
 
-    @pytest.mark.skipif(not (DATA_DIR / "148L.cif").exists(), reason="Test data not available")
+    @pytest.mark.skipif(not (FROM_PDB_DIR / "148L.cif").exists(), reason="Test data not available")
     def test_assign_default_output(self, tmp_path: Path) -> None:
         """assign without output uses default naming."""
         input_file = tmp_path / "test.cif"
-        shutil.copy(DATA_DIR / "148L.cif", input_file)
+        shutil.copy(FROM_PDB_DIR / "148L.cif", input_file)
 
         result = runner.invoke(app, ["assign", str(input_file)])
 
@@ -58,10 +59,10 @@ class TestCLI:
         expected_output = tmp_path / "test_molid.cif"
         assert expected_output.exists()
 
-    @pytest.mark.skipif(not (DATA_DIR / "148L.cif").exists(), reason="Test data not available")
+    @pytest.mark.skipif(not (FROM_PDB_DIR / "148L.cif").exists(), reason="Test data not available")
     def test_assign_custom_conn_types(self, tmp_path: Path) -> None:
         """assign with custom conn-types option."""
-        input_file = DATA_DIR / "148L.cif"
+        input_file = FROM_PDB_DIR / "148L.cif"
         output_file = tmp_path / "output.cif"
 
         result = runner.invoke(
