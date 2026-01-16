@@ -27,6 +27,15 @@ cifmolid assign input.cif output.cif
 # Use default output name (input_molid.cif)
 cifmolid assign input.cif
 
+# Output as JSON
+cifmolid assign input.cif -f json output.json
+
+# Output to stdout (for piping)
+cifmolid assign input.cif -f json -
+
+# Available formats: cif, json, csv, tsv, table
+cifmolid assign input.cif -f csv output.csv
+
 # Specify custom covalent bond types
 cifmolid assign input.cif --conn-types covale,disulf,metalc
 ```
@@ -48,16 +57,16 @@ mapping = assign_molecule_id("input.cif")
 mapping = assign_molecule_id("input.cif", "output.cif", covalent_types={"covale", "disulf", "metalc"})
 ```
 
-### Lower-level API
+### Output Formatters
 
 ```python
-from cifmolid import find_components
+from cifmolid import assign_molecule_id, to_json, to_csv
 
-# Find connected components from nodes and edges
-nodes = ["A", "B", "C", "D"]
-edges = [("A", "B"), ("C", "D")]
-mapping = find_components(nodes, edges)
-# OrderedDict([('A', 0), ('B', 0), ('C', 1), ('D', 1)])
+mapping = assign_molecule_id("input.cif")
+
+# Convert to different formats
+print(to_json(mapping))   # {"A": 0, "B": 0, "C": 1}
+print(to_csv(mapping))    # label_asym_id,molecule_id\nA,0\n...
 ```
 
 ## Output
