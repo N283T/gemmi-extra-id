@@ -9,7 +9,8 @@ try:
     from rich.console import Console
 except ImportError:
     print(
-        "CLI dependencies not installed. Install with:\n  pip install gemmi-extra-id[cli]",
+        "CLI dependencies (typer, rich) not installed.\n"
+        "Install with: pip install gemmi-extra-id[cli]",
         file=sys.stderr,
     )
     sys.exit(1)
