@@ -59,6 +59,10 @@ _ENTITY_TYPE = "_entity.type"
 # Extended ID tags
 _EXTENDED_MAP_CATEGORY = "_extended_id_map."
 
+# Swap feature
+_ATOM_SITE_ORIG_AUTH = "_atom_site.orig_auth_asym_id"
+VALID_SWAP_TARGETS = frozenset({"molecule_id", "pn_unit_id", "entity_id", "label_asym_id"})
+
 
 def _get_chain_info(
     loop: gemmi.cif.Loop,
@@ -410,5 +414,201 @@ def assign_extended_ids(
         _add_molecule_id_column(atom_site_loop, molecule_mapping, label_idx)
         _add_extended_mapping_loop(block, chain_order, chain_info_dict)
         doc.write_file(str(output_path))
+
+    return AssignmentResult(chain_info=chain_info_dict)
+
+
+def _swap_auth_asym_id(
+    loop: gemmi.cif.Loop,
+    chain_info_dict: dict[str, ChainInfo],
+    swap_with: str,
+    label_idx: int,
+    preserve_original: bool = True,
+) -> None:
+    """
+    Swap auth_asym_id with specified ID in atom_site loop.
+
+    Args:
+        loop: The _atom_site loop to modify.
+        chain_info_dict: ChainInfo for each chain.
+        swap_with: Which ID to swap with.
+        label_idx: Index of label_asym_id column in loop.
+        preserve_original: Whether to preserve original auth_asym_id.
+    """
+    tags = list(loop.tags)
+
+    # Get or create auth_asym_id index
+    if _ATOM_SITE_AUTH in tags:
+        auth_idx = tags.index(_ATOM_SITE_AUTH)
+    else:
+        loop.add_columns([_ATOM_SITE_AUTH], value="?")
+        tags = list(loop.tags)
+        auth_idx = tags.index(_ATOM_SITE_AUTH)
+
+    # Optionally preserve original auth_asym_id
+    if preserve_original:
+        if _ATOM_SITE_ORIG_AUTH not in tags:
+            loop.add_columns([_ATOM_SITE_ORIG_AUTH], value="?")
+            tags = list(loop.tags)
+        orig_auth_idx = tags.index(_ATOM_SITE_ORIG_AUTH)
+
+        # Copy current auth values to orig column
+        for row_idx in range(loop.length()):
+            loop[row_idx, orig_auth_idx] = loop[row_idx, auth_idx]
+
+    # Perform swap
+    for row_idx in range(loop.length()):
+        label = loop[row_idx, label_idx]
+        info = chain_info_dict[label]
+
+        if swap_with == "molecule_id":
+            new_value = str(info.molecule_id)
+        elif swap_with == "pn_unit_id":
+            new_value = info.pn_unit_id
+        elif swap_with == "entity_id":
+            new_value = info.entity_id
+        elif swap_with == "label_asym_id":
+            new_value = info.label_asym_id
+        else:
+            raise ValueError(f"Unknown swap_with value: {swap_with}")
+
+        loop[row_idx, auth_idx] = new_value
+
+
+def swap_auth_asym_id(
+    input_path: str | Path,
+    output_path: str | Path,
+    swap_with: str = "molecule_id",
+    preserve_original: bool = True,
+    covalent_types: AbstractSet[str] | None = None,
+) -> AssignmentResult:
+    """
+    Assign IDs and swap auth_asym_id with the specified extra-id.
+
+    This function computes all extended IDs and then replaces the
+    auth_asym_id column with the specified ID. The original auth_asym_id
+    values are optionally preserved in a new column.
+
+    Args:
+        input_path: Path to input mmCIF file.
+        output_path: Path to output mmCIF file.
+        swap_with: The ID to swap into auth_asym_id:
+            - "molecule_id": Connected component ID (integer as string)
+            - "pn_unit_id": Same-type covalent unit ID
+            - "entity_id": Entity ID from _struct_asym
+            - "label_asym_id": Label asym ID
+        preserve_original: If True, store original auth_asym_id in
+            _atom_site.orig_auth_asym_id.
+        covalent_types: Set of conn_type_id values to treat as covalent bonds.
+
+    Returns:
+        AssignmentResult containing ChainInfo for each chain.
+
+    Raises:
+        ValueError: If swap_with is not a valid target.
+        FileNotFoundError: If input file does not exist.
+    """
+    if swap_with not in VALID_SWAP_TARGETS:
+        raise ValueError(
+            f"Invalid swap_with value: {swap_with}. "
+            f"Valid options: {', '.join(sorted(VALID_SWAP_TARGETS))}"
+        )
+
+    if covalent_types is None:
+        covalent_types = DEFAULT_COVALENT_TYPES
+    else:
+        covalent_types = frozenset(t.lower() for t in covalent_types)
+
+    input_path = Path(input_path)
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+    if not input_path.is_file():
+        raise ValueError(f"Input path is not a file: {input_path}")
+
+    doc = gemmi.cif.read(str(input_path))
+    block = doc.sole_block()
+
+    atom_site_col = block.find_loop(_ATOM_SITE_LABEL)
+    if atom_site_col is None:
+        raise ValueError(f"Missing {_ATOM_SITE_LABEL} in {input_path}")
+
+    atom_site_loop = atom_site_col.get_loop()
+    chain_order, label_to_auth, label_idx = _get_chain_info(atom_site_loop)
+    edges = _get_covalent_edges(block, covalent_types)
+    entity_mapping = _get_entity_mapping(block)
+
+    # Compute molecule_id (connected components)
+    molecule_mapping = find_components(chain_order, edges)
+
+    # Extract entity types for pn_unit calculation
+    entity_types = {chain: entity_mapping.get(chain, ("?", "unknown"))[1] for chain in chain_order}
+
+    # Compute pn_unit_id (same-type connected components)
+    pn_unit_mapping = find_pn_units(chain_order, edges, entity_types)
+
+    # Group chains by molecule_id to compute molecule_entity
+    molecule_to_chains: dict[int, list[str]] = {}
+    for chain, mol_id in molecule_mapping.items():
+        if mol_id not in molecule_to_chains:
+            molecule_to_chains[mol_id] = []
+        molecule_to_chains[mol_id].append(chain)
+
+    # Compute molecule_entity (smallest entity_id in molecule)
+    molecule_entity_map: dict[int, str] = {}
+    for mol_id, chains in molecule_to_chains.items():
+        entity_ids = [
+            entity_mapping.get(c, ("?", "unknown"))[0]
+            for c in chains
+            if entity_mapping.get(c, ("?", "unknown"))[0] != "?"
+        ]
+        if entity_ids:
+            try:
+                molecule_entity_map[mol_id] = str(min(int(e) for e in entity_ids))
+            except ValueError:
+                molecule_entity_map[mol_id] = min(entity_ids)
+        else:
+            molecule_entity_map[mol_id] = "?"
+
+    # Build ChainInfo for each chain
+    chain_info_dict: OrderedDict[str, ChainInfo] = OrderedDict()
+    for chain in chain_order:
+        entity_id, entity_type = entity_mapping.get(chain, ("?", "unknown"))
+        pn_unit_id = pn_unit_mapping.get(chain, chain)
+
+        # pn_unit_entity: entity_id of the pn_unit (should be same for all chains)
+        pn_members = pn_unit_id.split(",")
+        pn_entity_ids = [
+            entity_mapping.get(c, ("?", "unknown"))[0]
+            for c in pn_members
+            if entity_mapping.get(c, ("?", "unknown"))[0] != "?"
+        ]
+        if pn_entity_ids:
+            try:
+                pn_unit_entity = str(min(int(e) for e in pn_entity_ids))
+            except ValueError:
+                pn_unit_entity = min(pn_entity_ids)
+        else:
+            pn_unit_entity = "?"
+
+        mol_id = molecule_mapping[chain]
+        chain_info_dict[chain] = ChainInfo(
+            label_asym_id=chain,
+            auth_asym_id=label_to_auth.get(chain, "?"),
+            entity_id=entity_id,
+            entity_type=entity_type,
+            molecule_id=mol_id,
+            pn_unit_id=pn_unit_id,
+            pn_unit_entity=pn_unit_entity,
+            molecule_entity=molecule_entity_map[mol_id],
+        )
+
+    # Perform the swap
+    _swap_auth_asym_id(atom_site_loop, chain_info_dict, swap_with, label_idx, preserve_original)
+
+    # Also add molecule_id column and mapping loop
+    _add_molecule_id_column(atom_site_loop, molecule_mapping, label_idx)
+    _add_extended_mapping_loop(block, chain_order, chain_info_dict)
+
+    doc.write_file(str(output_path))
 
     return AssignmentResult(chain_info=chain_info_dict)

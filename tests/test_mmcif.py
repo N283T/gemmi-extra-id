@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from gemmi_extra_id.mmcif import assign_extended_ids, assign_molecule_id
+from gemmi_extra_id.mmcif import (
+    VALID_SWAP_TARGETS,
+    assign_extended_ids,
+    assign_molecule_id,
+    swap_auth_asym_id,
+)
 
 DATA_DIR = Path(__file__).parent / "data"
 FROM_PDB_DIR = DATA_DIR / "from_pdb"
@@ -267,3 +272,175 @@ class TestSpecificStructures:
 
         # Large structure with many chains (5Y6P has ~1100 chains)
         assert len(result.chain_info) > 1000
+
+
+class TestSwapAuthAsymId:
+    """Tests for swap_auth_asym_id function."""
+
+    def test_valid_swap_targets_constant(self) -> None:
+        """VALID_SWAP_TARGETS contains expected IDs."""
+        assert "molecule_id" in VALID_SWAP_TARGETS
+        assert "pn_unit_id" in VALID_SWAP_TARGETS
+        assert "entity_id" in VALID_SWAP_TARGETS
+        assert "label_asym_id" in VALID_SWAP_TARGETS
+
+    def test_invalid_swap_target(self, tmp_path: Path) -> None:
+        """Raises ValueError for invalid swap target."""
+        if not (FROM_PDB_DIR / "148L.cif").exists():
+            pytest.skip("Test data not available")
+
+        with pytest.raises(ValueError, match="Invalid swap_with value"):
+            swap_auth_asym_id(
+                FROM_PDB_DIR / "148L.cif",
+                tmp_path / "output.cif",
+                swap_with="invalid_id",
+            )
+
+    def test_file_not_found(self, tmp_path: Path) -> None:
+        """Raises FileNotFoundError for non-existent file."""
+        with pytest.raises(FileNotFoundError):
+            swap_auth_asym_id(
+                "nonexistent.cif",
+                tmp_path / "output.cif",
+            )
+
+    @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
+    def test_swap_with_molecule_id(self, tmp_path: Path) -> None:
+        """Swaps auth_asym_id with molecule_id."""
+        import gemmi
+
+        output_file = tmp_path / "output.cif"
+
+        result = swap_auth_asym_id(
+            FROM_PDB_DIR / "148L.cif",
+            output_file,
+            swap_with="molecule_id",
+        )
+
+        assert output_file.exists()
+        assert len(result.chain_info) > 0
+
+        # Verify the swap by reading the output
+        doc = gemmi.cif.read(str(output_file))
+        block = doc.sole_block()
+
+        # Check that auth_asym_id contains molecule_id values (integer strings)
+        auth_col = block.find_values("_atom_site.auth_asym_id")
+        unique_auth = {str(v) for v in auth_col if str(v) not in ("?", ".")}
+        assert all(v.isdigit() for v in unique_auth), f"Expected integers, got {unique_auth}"
+
+    @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
+    def test_swap_with_label_asym_id(self, tmp_path: Path) -> None:
+        """Swaps auth_asym_id with label_asym_id."""
+        import gemmi
+
+        output_file = tmp_path / "output.cif"
+
+        swap_auth_asym_id(
+            FROM_PDB_DIR / "148L.cif",
+            output_file,
+            swap_with="label_asym_id",
+        )
+
+        assert output_file.exists()
+
+        # Verify auth_asym_id now contains label_asym_id values
+        doc = gemmi.cif.read(str(output_file))
+        block = doc.sole_block()
+
+        auth_col = list(block.find_values("_atom_site.auth_asym_id"))
+        label_col = list(block.find_values("_atom_site.label_asym_id"))
+        assert auth_col == label_col
+
+    @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
+    def test_preserves_original_auth_asym_id(self, tmp_path: Path) -> None:
+        """Original auth_asym_id is preserved in orig_auth_asym_id."""
+        import gemmi
+
+        output_file = tmp_path / "output.cif"
+
+        swap_auth_asym_id(
+            FROM_PDB_DIR / "148L.cif",
+            output_file,
+            swap_with="molecule_id",
+            preserve_original=True,
+        )
+
+        doc = gemmi.cif.read(str(output_file))
+        block = doc.sole_block()
+
+        # Check that orig_auth_asym_id column exists
+        orig_col = block.find_values("_atom_site.orig_auth_asym_id")
+        assert orig_col is not None, "orig_auth_asym_id column should exist"
+
+        # Original values should include typical chain identifiers
+        unique_orig = {str(v) for v in orig_col if str(v) not in ("?", ".")}
+        assert len(unique_orig) > 0, "Should have preserved original auth values"
+
+    @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
+    def test_no_preserve_original(self, tmp_path: Path) -> None:
+        """No orig_auth_asym_id when preserve_original=False."""
+        import gemmi
+
+        output_file = tmp_path / "output.cif"
+
+        swap_auth_asym_id(
+            FROM_PDB_DIR / "148L.cif",
+            output_file,
+            swap_with="molecule_id",
+            preserve_original=False,
+        )
+
+        doc = gemmi.cif.read(str(output_file))
+        block = doc.sole_block()
+
+        # orig_auth_asym_id column should not exist
+        orig_col = block.find_values("_atom_site.orig_auth_asym_id")
+        assert orig_col is None, "orig_auth_asym_id should not exist when preserve_original=False"
+
+    @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
+    def test_swap_with_pn_unit_id(self, tmp_path: Path) -> None:
+        """Swaps auth_asym_id with pn_unit_id."""
+        output_file = tmp_path / "output.cif"
+
+        result = swap_auth_asym_id(
+            FROM_PDB_DIR / "148L.cif",
+            output_file,
+            swap_with="pn_unit_id",
+        )
+
+        assert output_file.exists()
+        assert len(result.chain_info) > 0
+
+    @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
+    def test_swap_with_entity_id(self, tmp_path: Path) -> None:
+        """Swaps auth_asym_id with entity_id."""
+        output_file = tmp_path / "output.cif"
+
+        result = swap_auth_asym_id(
+            FROM_PDB_DIR / "148L.cif",
+            output_file,
+            swap_with="entity_id",
+        )
+
+        assert output_file.exists()
+        assert len(result.chain_info) > 0
+
+    @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
+    def test_returns_assignment_result(self, tmp_path: Path) -> None:
+        """Returns AssignmentResult with correct structure."""
+        output_file = tmp_path / "output.cif"
+
+        result = swap_auth_asym_id(
+            FROM_PDB_DIR / "148L.cif",
+            output_file,
+            swap_with="molecule_id",
+        )
+
+        # Check AssignmentResult structure
+        assert hasattr(result, "chain_info")
+        assert len(result.chain_info) > 0
+
+        for chain_id, info in result.chain_info.items():
+            assert info.label_asym_id == chain_id
+            assert isinstance(info.molecule_id, int)

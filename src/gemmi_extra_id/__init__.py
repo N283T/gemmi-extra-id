@@ -31,10 +31,12 @@ from gemmi_extra_id.formatters import (
 )
 from gemmi_extra_id.graph import DEFAULT_COVALENT_TYPES, find_components, find_pn_units
 from gemmi_extra_id.mmcif import (
+    VALID_SWAP_TARGETS,
     AssignmentResult,
     ChainInfo,
     assign_extended_ids,
     assign_molecule_id,
+    swap_auth_asym_id,
 )
 
 __version__ = "0.1.0"
@@ -42,6 +44,7 @@ __all__ = [
     # Core functions
     "assign_molecule_id",
     "assign_extended_ids",
+    "swap_auth_asym_id",
     "find_components",
     "find_pn_units",
     # Data classes
@@ -49,6 +52,7 @@ __all__ = [
     "AssignmentResult",
     # Constants
     "DEFAULT_COVALENT_TYPES",
+    "VALID_SWAP_TARGETS",
     # Output formatters (basic)
     "to_json",
     "to_csv",
