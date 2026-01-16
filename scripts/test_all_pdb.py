@@ -1,27 +1,40 @@
-#!/usr/bin/env python3
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#     "atomworks>=2.2.0",
-#     "gemmi>=0.7.0",
-#     "gemmi-extra-id",
-# ]
-# ///
-"""
-Test gemmi-extra-id against AtomWorks on all PDB files.
-
-Usage:
-    uv run scripts/test_all_pdb.py /path/to/pdb/mirror [--output results.json] [--workers N]
-"""
+"""Test gemmi-extra-id against AtomWorks on original PDB files."""
 
 import json
+import logging
 import os
-import sys
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated, Optional
 
 import gemmi
+import typer
+from rich.console import Console
+from rich.table import Table
+from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
+console = Console()
+
+
+def setup_logging(log_file: Path | None = None) -> None:
+    """Configure logging to file only (to avoid interfering with tqdm)."""
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+
+    logging.captureWarnings(True)
 
 
 @dataclass
@@ -35,12 +48,12 @@ class TestResult:
 
 
 def find_cif_files(mirror_path: Path) -> list[Path]:
-    """Find all CIF files in PDB mirror directory using gemmi.CifWalk."""
+    """Find all CIF files in directory using gemmi.CifWalk."""
     return [Path(cif_str) for cif_str in gemmi.CifWalk(str(mirror_path))]
 
 
-def extract_atomworks_ids(cif_path: Path) -> dict:
-    """Extract molecule_id mapping from AtomWorks parse result."""
+def extract_atomworks_mapping(cif_path: Path) -> dict[str, int]:
+    """Extract molecule_id mapping from AtomWorks."""
     from atomworks.io import parse
 
     result = parse(
@@ -49,44 +62,65 @@ def extract_atomworks_ids(cif_path: Path) -> dict:
         add_missing_atoms=False,
         remove_waters=False,
     )
+
     asym = result["asym_unit"][0]
 
-    # Build chain -> molecule_id mapping
-    mapping = {}
-    for chain, mol_id in zip(asym.chain_id, asym.molecule_id, strict=True):
+    mapping: dict[str, int] = {}
+    for i in range(len(asym)):
+        chain = str(asym.chain_id[i])
         if chain not in mapping:
-            mapping[chain] = int(mol_id)
+            mapping[chain] = int(asym.molecule_id[i])
 
-    return {"molecule_id_mapping": mapping}
+    return mapping
 
 
-def extract_gemmi_ids(cif_path: Path) -> dict:
+def extract_gemmi_ids(cif_path: Path) -> dict[str, int]:
     """Extract molecule_id mapping from gemmi-extra-id."""
     from gemmi_extra_id import assign_extended_ids
 
     result = assign_extended_ids(cif_path)
-    return {"molecule_id_mapping": result.molecule_id_mapping}
+    return dict(result.molecule_id_mapping)
 
 
-def compare_results(expected: dict, actual: dict) -> tuple[bool, list[str]]:
-    """Compare AtomWorks and gemmi-extra-id results."""
+def compare_results(
+    expected: dict[str, int], actual: dict[str, int]
+) -> tuple[bool, list[str]]:
+    """Compare molecule groupings between AtomWorks and gemmi-extra-id.
+
+    Compares which chains are grouped together, not the exact molecule_id values.
+    AtomWorks may filter out certain chains (e.g., some ions), so we only
+    compare chains that exist in both outputs.
+    """
     errors = []
 
-    exp_mapping = expected["molecule_id_mapping"]
-    act_mapping = actual["molecule_id_mapping"]
+    # Get common chains
+    common_chains = set(expected.keys()) & set(actual.keys())
+    if not common_chains:
+        errors.append("No common chains between AtomWorks and gemmi-extra-id")
+        return False, errors
 
-    # Check all chains match
-    if set(exp_mapping.keys()) != set(act_mapping.keys()):
+    # Build groupings: mol_id -> set of chains
+    def build_groups(mapping: dict[str, int], chains: set[str]) -> dict[int, set[str]]:
+        groups: dict[int, set[str]] = {}
+        for chain in chains:
+            if chain in mapping:
+                mol_id = mapping[chain]
+                if mol_id not in groups:
+                    groups[mol_id] = set()
+                groups[mol_id].add(chain)
+        return groups
+
+    expected_groups = build_groups(expected, common_chains)
+    actual_groups = build_groups(actual, common_chains)
+
+    # Convert to sets of frozensets for comparison
+    expected_sets = {frozenset(g) for g in expected_groups.values()}
+    actual_sets = {frozenset(g) for g in actual_groups.values()}
+
+    if expected_sets != actual_sets:
         errors.append(
-            f"Chain mismatch: expected {set(exp_mapping.keys())}, got {set(act_mapping.keys())}"
+            f"Molecule groupings differ: expected {expected_sets}, got {actual_sets}"
         )
-
-    # Check molecule_id values
-    for chain in exp_mapping:
-        if chain in act_mapping and exp_mapping[chain] != act_mapping[chain]:
-            errors.append(
-                f"Chain {chain}: expected mol_id={exp_mapping[chain]}, got {act_mapping[chain]}"
-            )
 
     return len(errors) == 0, errors
 
@@ -95,8 +129,13 @@ def process_one_file(cif_path: Path) -> TestResult:
     """Process a single CIF file and return the test result."""
     pdb_id = cif_path.stem.replace(".cif", "")
     try:
-        expected = extract_atomworks_ids(cif_path)
+        # Get molecule_id from AtomWorks
+        expected = extract_atomworks_mapping(cif_path)
+
+        # Get molecule_id from gemmi-extra-id
         actual = extract_gemmi_ids(cif_path)
+
+        # Compare results
         passed, errors = compare_results(expected, actual)
 
         if passed:
@@ -107,56 +146,94 @@ def process_one_file(cif_path: Path) -> TestResult:
         return TestResult(pdb_id=pdb_id, status="error", exception=str(e))
 
 
-def main() -> int:
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <pdb_mirror_path> [--output results.json] [--workers N]")
-        return 1
+app = typer.Typer(help="Test gemmi-extra-id against AtomWorks on PDB files.")
 
-    mirror_path = Path(sys.argv[1])
-    output_path = None
-    workers = os.cpu_count() or 4
 
-    if "--output" in sys.argv:
-        idx = sys.argv.index("--output")
-        output_path = Path(sys.argv[idx + 1])
+@app.command()
+def main(
+    pdb_mirror: Annotated[
+        Path, typer.Argument(help="Path to PDB mmCIF mirror directory")
+    ],
+    output: Annotated[
+        Optional[Path], typer.Option("--output", "-o", help="Output JSON file for results")
+    ] = None,
+    workers: Annotated[
+        int, typer.Option("--workers", "-w", help="Number of parallel workers")
+    ] = os.cpu_count() or 4,
+    log: Annotated[
+        Optional[Path], typer.Option("--log", "-l", help="Log file path")
+    ] = None,
+    limit: Annotated[
+        Optional[int], typer.Option("--limit", "-n", help="Limit number of files to process")
+    ] = None,
+) -> None:
+    """Test gemmi-extra-id against AtomWorks on original PDB mmCIF files.
 
-    if "--workers" in sys.argv:
-        idx = sys.argv.index("--workers")
-        workers = int(sys.argv[idx + 1])
+    Both AtomWorks and gemmi-extra-id process the same original PDB files,
+    ensuring they have access to the same struct_conn data.
+    """
+    setup_logging(log)
 
     # Find all CIF files
-    cif_files = find_cif_files(mirror_path)
+    console.print(f"Scanning [cyan]{pdb_mirror}[/cyan] for CIF files...")
+    cif_files = find_cif_files(pdb_mirror)
+
+    if limit:
+        cif_files = cif_files[:limit]
+
     total = len(cif_files)
-    print(f"Found {total} CIF files, processing with {workers} workers...")
+    console.print(
+        f"Found [green]{total}[/green] CIF files, processing with [yellow]{workers}[/yellow] workers..."
+    )
+
+    logger.info(f"Found {total} CIF files, processing with {workers} workers...")
 
     results: dict[str, list] = {"passed": [], "failed": [], "errors": []}
 
-    # Process files in parallel
+    # Process files in parallel with tqdm progress bar
     with ProcessPoolExecutor(max_workers=workers) as executor:
-        for i, result in enumerate(executor.map(process_one_file, cif_files), 1):
-            if result.status == "passed":
-                results["passed"].append(result.pdb_id)
-                print(f"[{i}/{total}] PASS: {result.pdb_id}")
-            elif result.status == "failed":
-                results["failed"].append({"pdb_id": result.pdb_id, "errors": result.errors})
-                print(f"[{i}/{total}] FAIL: {result.pdb_id} - {result.errors}")
-            else:
-                results["errors"].append({"pdb_id": result.pdb_id, "error": result.exception})
-                print(f"[{i}/{total}] ERROR: {result.pdb_id} - {result.exception}")
+        with tqdm(total=total, desc="Processing", unit="file") as pbar:
+            for result in executor.map(process_one_file, cif_files):
+                if result.status == "passed":
+                    results["passed"].append(result.pdb_id)
+                    logger.info(f"PASS: {result.pdb_id}")
+                elif result.status == "failed":
+                    results["failed"].append(
+                        {"pdb_id": result.pdb_id, "errors": result.errors}
+                    )
+                    logger.warning(f"FAIL: {result.pdb_id} - {result.errors}")
+                    tqdm.write(f"FAIL: {result.pdb_id}")
+                else:
+                    results["errors"].append(
+                        {"pdb_id": result.pdb_id, "error": result.exception}
+                    )
+                    logger.error(f"ERROR: {result.pdb_id} - {result.exception}")
+                    tqdm.write(f"ERROR: {result.pdb_id} - {result.exception}")
+                pbar.update(1)
 
-    # Summary
-    print(
-        f"\nSummary: {len(results['passed'])} passed, "
+    # Summary table
+    table = Table(title="Test Summary")
+    table.add_column("Status", style="bold")
+    table.add_column("Count", justify="right")
+    table.add_row("[green]Passed[/green]", str(len(results["passed"])))
+    table.add_row("[yellow]Failed[/yellow]", str(len(results["failed"])))
+    table.add_row("[red]Errors[/red]", str(len(results["errors"])))
+    console.print(table)
+
+    logger.info(
+        f"Summary: {len(results['passed'])} passed, "
         f"{len(results['failed'])} failed, {len(results['errors'])} errors"
     )
 
-    if output_path:
-        with open(output_path, "w") as f:
+    if output:
+        with open(output, "w") as f:
             json.dump(results, f, indent=2)
-        print(f"Results written to {output_path}")
+        console.print(f"Results written to [cyan]{output}[/cyan]")
+        logger.info(f"Results written to {output}")
 
-    return 0 if not results["failed"] else 1
+    if results["failed"] or results["errors"]:
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()
