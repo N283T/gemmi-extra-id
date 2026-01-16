@@ -388,7 +388,7 @@ class TestSwapAuthAsymId:
         block = doc.sole_block()
 
         # orig_auth_asym_id column should not exist
-        orig_col = block.find_values("_atom_site.orig_auth_asym_id")
+        orig_col = block.find_loop("_atom_site.orig_auth_asym_id")
         assert orig_col is None, "orig_auth_asym_id should not exist when preserve_original=False"
 
     @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
