@@ -2,7 +2,7 @@
 
 Assign extra IDs to mmCIF files based on covalent connectivity.
 
-gemmi-extra-id identifies connected components of chains using covalent bond information from `_struct_conn` and writes the grouping back to the mmCIF file.
+This is a [Gemmi](https://gemmi.readthedocs.io/)-based reimplementation of the ID system defined in the [AtomWorks Glossary](https://rosettacommons.github.io/atomworks/latest/glossary.html). It identifies connected components of chains using covalent bond information from `_struct_conn` and writes the grouping back to the mmCIF file.
 
 ## Installation
 
