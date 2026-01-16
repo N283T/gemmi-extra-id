@@ -1,17 +1,89 @@
-# molecule-id-gemmi
+# molid
 
-Utilities for assigning `molecule_id` to mmCIF files using Gemmi, with
-AtomWorks references for comparison.
+Assign `molecule_id` to mmCIF files based on covalent connectivity.
 
-## Layout
-- `scripts/`: executable helpers
-- `data/`: example inputs/outputs
-- `docs/IMPLEMENTATION.md`: implementation notes and usage
+molid identifies connected components of chains using covalent bond information from `_struct_conn` and writes the grouping back to the mmCIF file.
 
-## Quick start
+## Installation
+
+```bash
+pip install molid
 ```
-uv run python scripts/add_molecule_id_struct_conn.py
-uv run python scripts/compare_molecule_id.py \
-  data/148L_atomworks_molecule_id_no_waters.cif \
-  data/148L_struct_conn_molecule_id_no_waters.cif
+
+Or with uv:
+
+```bash
+uv add molid
 ```
+
+## Usage
+
+### Command Line
+
+```bash
+# Assign molecule_id to an mmCIF file
+molid assign input.cif output.cif
+
+# Use default output name (input_molid.cif)
+molid assign input.cif
+
+# Specify custom covalent bond types
+molid assign input.cif -o output.cif --conn-types covale,disulf,metalc
+```
+
+### Python API
+
+```python
+from molid import assign_molecule_id
+
+# Assign and write to file
+mapping = assign_molecule_id("input.cif", "output.cif")
+print(mapping)
+# OrderedDict([('A', 0), ('B', 0), ('C', 1), ...])
+
+# Get mapping without writing
+mapping = assign_molecule_id("input.cif")
+
+# Custom covalent types
+mapping = assign_molecule_id("input.cif", "output.cif", covalent_types={"covale", "disulf", "metalc"})
+```
+
+### Lower-level API
+
+```python
+from molid import find_components
+
+# Find connected components from nodes and edges
+nodes = ["A", "B", "C", "D"]
+edges = [("A", "B"), ("C", "D")]
+mapping = find_components(nodes, edges)
+# OrderedDict([('A', 0), ('B', 0), ('C', 1), ('D', 1)])
+```
+
+## Output
+
+molid adds two elements to the output mmCIF:
+
+1. `_atom_site.molecule_id` column - component ID for each atom
+2. `_molecule_id_map` loop - mapping of `label_asym_id` to `molecule_id`
+
+## Development
+
+```bash
+# Install with dev dependencies
+uv pip install -e ".[dev]"
+
+# Run tests
+uv run pytest
+
+# Run tests on multiple Python versions
+uv run nox
+
+# Lint and format
+uv run ruff check src tests
+uv run ruff format src tests
+```
+
+## License
+
+MIT
