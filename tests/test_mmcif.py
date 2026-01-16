@@ -130,7 +130,7 @@ class TestReferenceData:
         [
             ("148L", "148L.cif"),
             ("148L", "148L.cif.gz"),
-            ("1A0H", "1A0H.cif.gz"),
+            ("1A0H", "1A0H.cif"),
             ("5FQD", "5FQD.cif.gz"),
         ],
     )
@@ -219,10 +219,10 @@ class TestSpecificStructures:
         for chain, info in result.chain_info.items():
             assert info.pn_unit_id == chain, f"Chain {chain} should be its own pn_unit"
 
-    @pytest.mark.skipif(not _has_test_data("1A0H.cif.gz"), reason="Test data not available")
+    @pytest.mark.skipif(not _has_test_data("1A0H.cif"), reason="Test data not available")
     def test_1a0h_connectivity(self) -> None:
         """1A0H has chains connected via covale bonds (not disulf)."""
-        result = assign_extended_ids(FROM_PDB_DIR / "1A0H.cif.gz")
+        result = assign_extended_ids(FROM_PDB_DIR / "1A0H.cif")
 
         # AtomWorks: A=0 (standalone), B,E,G=1 (connected via covale)
         # Disulfide bonds (A-B) are NOT counted as molecule connections
