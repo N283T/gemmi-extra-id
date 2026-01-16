@@ -1,4 +1,4 @@
-"""Command-line interface for molid."""
+"""Command-line interface for cifmolid."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from molid import __version__
-from molid.cif import assign_molecule_id
-from molid.core import DEFAULT_COVALENT_TYPES
+from cifmolid import __version__
+from cifmolid.cif import assign_molecule_id
+from cifmolid.core import DEFAULT_COVALENT_TYPES
 
 app = typer.Typer(
-    name="molid",
+    name="cifmolid",
     help="Assign molecule_id to mmCIF files based on covalent connectivity.",
     no_args_is_help=True,
 )
@@ -24,7 +24,7 @@ err_console = Console(stderr=True)
 def version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
-        console.print(f"molid {__version__}")
+        console.print(f"cifmolid {__version__}")
         raise typer.Exit()
 
 

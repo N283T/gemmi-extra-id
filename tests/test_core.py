@@ -1,8 +1,8 @@
-"""Tests for molid.core module."""
+"""Tests for cifmolid.core module."""
 
 from collections import OrderedDict
 
-from molid.core import find_components
+from cifmolid.core import find_components
 
 
 class TestFindComponents:

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import gemmi
 
-from molid.core import DEFAULT_COVALENT_TYPES, find_components
+from cifmolid.core import DEFAULT_COVALENT_TYPES, find_components
 
 if TYPE_CHECKING:
     from collections.abc import Set as AbstractSet

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-molid is a Python library that assigns `molecule_id` to mmCIF files based on covalent connectivity from `_struct_conn` links. It identifies connected components of chains and writes the grouping back to the mmCIF file.
+cifmolid is a Python library that assigns `molecule_id` to mmCIF files based on covalent connectivity from `_struct_conn` links. It identifies connected components of chains and writes the grouping back to the mmCIF file.
 
 ## Commands
 
@@ -13,7 +13,7 @@ molid is a Python library that assigns `molecule_id` to mmCIF files based on cov
 uv pip install -e ".[dev]"
 
 # Run CLI
-uv run molid assign data/148L.cif output.cif
+uv run cifmolid assign data/148L.cif output.cif
 
 # Run tests
 uv run pytest
@@ -29,10 +29,10 @@ uv run ruff check src tests
 ## Architecture
 
 ### Module Structure
-- `src/molid/core.py` - Graph algorithms (`find_components`)
-- `src/molid/cif.py` - mmCIF I/O with Gemmi (`assign_molecule_id`)
-- `src/molid/cli.py` - CLI entry point (typer/rich)
-- `src/molid/__init__.py` - Public API exports
+- `src/cifmolid/core.py` - Graph algorithms (`find_components`)
+- `src/cifmolid/cif.py` - mmCIF I/O with Gemmi (`assign_molecule_id`)
+- `src/cifmolid/cli.py` - CLI entry point (typer/rich)
+- `src/cifmolid/__init__.py` - Public API exports
 
 ### Dev Scripts
 - `scripts/atomworks_ref.py` - Generate AtomWorks reference (PEP 723, standalone)
@@ -46,7 +46,7 @@ uv run ruff check src tests
 
 ### Public API
 ```python
-from molid import assign_molecule_id, find_components
+from cifmolid import assign_molecule_id, find_components
 ```
 
 ## Terminology

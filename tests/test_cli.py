@@ -1,4 +1,4 @@
-"""Tests for molid.cli module."""
+"""Tests for cifmolid.cli module."""
 
 import shutil
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from molid.cli import app
+from cifmolid.cli import app
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 runner = CliRunner()
@@ -19,7 +19,7 @@ class TestCLI:
         """--version prints version and exits."""
         result = runner.invoke(app, ["--version"])
         assert result.exit_code == 0
-        assert "molid" in result.output
+        assert "cifmolid" in result.output
         assert "0.1.0" in result.output
 
     def test_no_args_shows_help(self) -> None:

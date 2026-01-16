@@ -1,19 +1,19 @@
-# molid
+# cifmolid
 
 Assign `molecule_id` to mmCIF files based on covalent connectivity.
 
-molid identifies connected components of chains using covalent bond information from `_struct_conn` and writes the grouping back to the mmCIF file.
+cifmolid identifies connected components of chains using covalent bond information from `_struct_conn` and writes the grouping back to the mmCIF file.
 
 ## Installation
 
 ```bash
-pip install molid
+pip install cifmolid
 ```
 
 Or with uv:
 
 ```bash
-uv add molid
+uv add cifmolid
 ```
 
 ## Usage
@@ -22,19 +22,19 @@ uv add molid
 
 ```bash
 # Assign molecule_id to an mmCIF file
-molid assign input.cif output.cif
+cifmolid assign input.cif output.cif
 
 # Use default output name (input_molid.cif)
-molid assign input.cif
+cifmolid assign input.cif
 
 # Specify custom covalent bond types
-molid assign input.cif -o output.cif --conn-types covale,disulf,metalc
+cifmolid assign input.cif --conn-types covale,disulf,metalc
 ```
 
 ### Python API
 
 ```python
-from molid import assign_molecule_id
+from cifmolid import assign_molecule_id
 
 # Assign and write to file
 mapping = assign_molecule_id("input.cif", "output.cif")
@@ -51,7 +51,7 @@ mapping = assign_molecule_id("input.cif", "output.cif", covalent_types={"covale"
 ### Lower-level API
 
 ```python
-from molid import find_components
+from cifmolid import find_components
 
 # Find connected components from nodes and edges
 nodes = ["A", "B", "C", "D"]
@@ -62,7 +62,7 @@ mapping = find_components(nodes, edges)
 
 ## Output
 
-molid adds two elements to the output mmCIF:
+cifmolid adds two elements to the output mmCIF:
 
 1. `_atom_site.molecule_id` column - component ID for each atom
 2. `_molecule_id_map` loop - mapping of `label_asym_id` to `molecule_id`
