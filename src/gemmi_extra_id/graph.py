@@ -1,4 +1,20 @@
-"""Core algorithms for molecule_id assignment."""
+"""Graph algorithms for molecular connectivity analysis.
+
+This module provides algorithms for finding connected components in molecular
+structures based on covalent bond connectivity. It is used to assign molecule_id
+and pn_unit_id to chains in mmCIF files.
+
+The main functions are:
+- find_components: Find connected components using iterative DFS
+- find_pn_units: Find same-type connected components (pn_units)
+
+Example:
+    >>> from gemmi_extra_id.graph import find_components
+    >>> nodes = ["A", "B", "C"]
+    >>> edges = [("A", "B")]
+    >>> find_components(nodes, edges)
+    OrderedDict([('A', 0), ('B', 0), ('C', 1)])
+"""
 
 from __future__ import annotations
 
