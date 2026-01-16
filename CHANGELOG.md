@@ -20,6 +20,8 @@ Initial release.
 - `find_pn_units()` - Group chains by entity into PN units
 - CLI tool (`gemmi-extra-id assign`) with multiple output formats
 - Output formatters: JSON, CSV, TSV, table, tree
+- `swap_auth_asym_id()` - Swap `auth_asym_id` with assigned IDs for legacy application compatibility
+- `--swap` CLI option to replace `auth_asym_id` with `molecule_id`, `pn_unit_id`, `entity_id`, or `label_asym_id`
 - Support for Python 3.11, 3.12, and 3.13
 - Type annotations throughout the codebase
 

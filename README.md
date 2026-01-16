@@ -69,6 +69,22 @@ Tree output displays the ID hierarchy:
 ...
 ```
 
+### Swap Mode
+
+Use `--swap` to replace `auth_asym_id` with an assigned ID. This is useful for applications that only read `auth_asym_id`:
+
+```bash
+# Replace auth_asym_id with molecule_id
+gemmi-extra-id assign input.cif output.cif --swap molecule_id
+
+# Replace with label_asym_id
+gemmi-extra-id assign input.cif output.cif --swap label_asym_id
+
+# Available targets: molecule_id, pn_unit_id, entity_id, label_asym_id
+```
+
+The original `auth_asym_id` values are preserved in `_atom_site.orig_auth_asym_id`.
+
 ### Python API
 
 ```python
@@ -96,6 +112,18 @@ result = assign_extended_ids("input.cif", "output.cif")
 
 for chain, info in result.chain_info.items():
     print(f"{chain}: molecule={info.molecule_id}, pn_unit={info.pn_unit_id}")
+```
+
+### Swap API
+
+```python
+from gemmi_extra_id import swap_auth_asym_id
+
+# Swap auth_asym_id with molecule_id
+result = swap_auth_asym_id("input.cif", "output.cif", swap_with="molecule_id")
+
+# Don't preserve original auth_asym_id
+result = swap_auth_asym_id("input.cif", "output.cif", swap_with="molecule_id", preserve_original=False)
 ```
 
 ### Output Formatters
