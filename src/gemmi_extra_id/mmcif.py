@@ -229,6 +229,11 @@ def assign_molecule_id(
         covalent_types = frozenset(t.lower() for t in covalent_types)
 
     input_path = Path(input_path)
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+    if not input_path.is_file():
+        raise ValueError(f"Input path is not a file: {input_path}")
+
     doc = gemmi.cif.read(str(input_path))
     block = doc.sole_block()
 
@@ -318,6 +323,11 @@ def assign_extended_ids(
         covalent_types = frozenset(t.lower() for t in covalent_types)
 
     input_path = Path(input_path)
+    if not input_path.exists():
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+    if not input_path.is_file():
+        raise ValueError(f"Input path is not a file: {input_path}")
+
     doc = gemmi.cif.read(str(input_path))
     block = doc.sole_block()
 
