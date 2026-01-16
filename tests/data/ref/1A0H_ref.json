@@ -1,0 +1,130 @@
+{
+  "source": "atomworks",
+  "input_file": "1A0H.cif.gz",
+  "chain_count": 12,
+  "molecule_count": 8,
+  "molecule_id_mapping": {
+    "A": 0,
+    "B": 1,
+    "C": 2,
+    "D": 3,
+    "E": 1,
+    "F": 3,
+    "G": 1,
+    "H": 3,
+    "I": 4,
+    "J": 5,
+    "K": 6,
+    "L": 7
+  },
+  "chain_info": {
+    "A": {
+      "molecule_id": 0,
+      "chain_entity": 0,
+      "pn_unit_id": "A",
+      "pn_unit_entity": 0,
+      "molecule_entity": 0,
+      "chain_type": "6",
+      "label_entity_id": "1"
+    },
+    "B": {
+      "molecule_id": 1,
+      "chain_entity": 1,
+      "pn_unit_id": "B",
+      "pn_unit_entity": 1,
+      "molecule_entity": 1,
+      "chain_type": "6",
+      "label_entity_id": "2"
+    },
+    "C": {
+      "molecule_id": 2,
+      "chain_entity": 0,
+      "pn_unit_id": "C",
+      "pn_unit_entity": 0,
+      "molecule_entity": 0,
+      "chain_type": "6",
+      "label_entity_id": "1"
+    },
+    "D": {
+      "molecule_id": 3,
+      "chain_entity": 1,
+      "pn_unit_id": "D",
+      "pn_unit_entity": 1,
+      "molecule_entity": 1,
+      "chain_type": "6",
+      "label_entity_id": "2"
+    },
+    "E": {
+      "molecule_id": 1,
+      "chain_entity": 2,
+      "pn_unit_id": "E",
+      "pn_unit_entity": 2,
+      "molecule_entity": 1,
+      "chain_type": "10",
+      "label_entity_id": "3"
+    },
+    "F": {
+      "molecule_id": 3,
+      "chain_entity": 2,
+      "pn_unit_id": "F",
+      "pn_unit_entity": 2,
+      "molecule_entity": 1,
+      "chain_type": "10",
+      "label_entity_id": "3"
+    },
+    "G": {
+      "molecule_id": 1,
+      "chain_entity": 3,
+      "pn_unit_id": "G",
+      "pn_unit_entity": 3,
+      "molecule_entity": 1,
+      "chain_type": "8",
+      "label_entity_id": "4"
+    },
+    "H": {
+      "molecule_id": 3,
+      "chain_entity": 3,
+      "pn_unit_id": "H",
+      "pn_unit_entity": 3,
+      "molecule_entity": 1,
+      "chain_type": "8",
+      "label_entity_id": "4"
+    },
+    "I": {
+      "molecule_id": 4,
+      "chain_entity": 4,
+      "pn_unit_id": "I",
+      "pn_unit_entity": 4,
+      "molecule_entity": 2,
+      "chain_type": "9",
+      "label_entity_id": "5"
+    },
+    "J": {
+      "molecule_id": 5,
+      "chain_entity": 5,
+      "pn_unit_id": "J",
+      "pn_unit_entity": 5,
+      "molecule_entity": 3,
+      "chain_type": "9",
+      "label_entity_id": "5"
+    },
+    "K": {
+      "molecule_id": 6,
+      "chain_entity": 6,
+      "pn_unit_id": "K",
+      "pn_unit_entity": 6,
+      "molecule_entity": 4,
+      "chain_type": "9",
+      "label_entity_id": "5"
+    },
+    "L": {
+      "molecule_id": 7,
+      "chain_entity": 5,
+      "pn_unit_id": "L",
+      "pn_unit_entity": 5,
+      "molecule_entity": 3,
+      "chain_type": "9",
+      "label_entity_id": "5"
+    }
+  }
+}

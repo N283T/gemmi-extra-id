@@ -39,7 +39,10 @@ packages = ["src/gemmi_extra_id"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["-ra", "-q"]
+addopts = ["-ra", "-q", "-m", "not slow"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
 
 [tool.ruff]
 target-version = "py311"

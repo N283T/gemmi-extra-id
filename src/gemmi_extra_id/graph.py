@@ -29,7 +29,8 @@ Edge: TypeAlias = tuple[NodeId, NodeId]
 EntityType: TypeAlias = str
 PnUnitId: TypeAlias = str  # Comma-separated chain IDs
 
-DEFAULT_COVALENT_TYPES: frozenset[str] = frozenset({"covale", "disulf"})
+# AtomWorks-compatible: only "covale" by default (disulf is not considered intermolecular)
+DEFAULT_COVALENT_TYPES: frozenset[str] = frozenset({"covale"})
 
 
 def find_components(
