@@ -170,6 +170,96 @@ def _get_entity_mapping(
     return result
 
 
+def _compute_extended_chain_info(
+    chain_order: list[str],
+    label_to_auth: dict[str, str],
+    edges: list[tuple[str, str]],
+    entity_mapping: dict[str, tuple[str, str]],
+) -> tuple[OrderedDict[str, ChainInfo], dict[str, int]]:
+    """
+    Compute all extended IDs for chains.
+
+    This is the shared computation logic used by both assign_extended_ids
+    and swap_auth_asym_id.
+
+    Args:
+        chain_order: List of label_asym_id in order of appearance.
+        label_to_auth: Mapping from label_asym_id to auth_asym_id.
+        edges: List of covalent bond edges (chain pairs).
+        entity_mapping: Mapping from label_asym_id to (entity_id, entity_type).
+
+    Returns:
+        Tuple of (chain_info_dict, molecule_mapping).
+    """
+    # Compute molecule_id (connected components)
+    molecule_mapping = find_components(chain_order, edges)
+
+    # Extract entity types for pn_unit calculation
+    entity_types = {chain: entity_mapping.get(chain, ("?", "unknown"))[1] for chain in chain_order}
+
+    # Compute pn_unit_id (same-type connected components)
+    pn_unit_mapping = find_pn_units(chain_order, edges, entity_types)
+
+    # Group chains by molecule_id to compute molecule_entity
+    molecule_to_chains: dict[int, list[str]] = {}
+    for chain, mol_id in molecule_mapping.items():
+        if mol_id not in molecule_to_chains:
+            molecule_to_chains[mol_id] = []
+        molecule_to_chains[mol_id].append(chain)
+
+    # Compute molecule_entity (smallest entity_id in molecule)
+    molecule_entity_map: dict[int, str] = {}
+    for mol_id, chains in molecule_to_chains.items():
+        entity_ids = [
+            entity_mapping.get(c, ("?", "unknown"))[0]
+            for c in chains
+            if entity_mapping.get(c, ("?", "unknown"))[0] != "?"
+        ]
+        if entity_ids:
+            # Use smallest entity_id (numerically if possible, lexically otherwise)
+            try:
+                molecule_entity_map[mol_id] = str(min(int(e) for e in entity_ids))
+            except ValueError:
+                molecule_entity_map[mol_id] = min(entity_ids)
+        else:
+            molecule_entity_map[mol_id] = "?"
+
+    # Build ChainInfo for each chain
+    chain_info_dict: OrderedDict[str, ChainInfo] = OrderedDict()
+    for chain in chain_order:
+        entity_id, entity_type = entity_mapping.get(chain, ("?", "unknown"))
+        pn_unit_id = pn_unit_mapping.get(chain, chain)
+
+        # pn_unit_entity: entity_id of the pn_unit (should be same for all chains)
+        pn_members = pn_unit_id.split(",")
+        pn_entity_ids = [
+            entity_mapping.get(c, ("?", "unknown"))[0]
+            for c in pn_members
+            if entity_mapping.get(c, ("?", "unknown"))[0] != "?"
+        ]
+        if pn_entity_ids:
+            try:
+                pn_unit_entity = str(min(int(e) for e in pn_entity_ids))
+            except ValueError:
+                pn_unit_entity = min(pn_entity_ids)
+        else:
+            pn_unit_entity = "?"
+
+        mol_id = molecule_mapping[chain]
+        chain_info_dict[chain] = ChainInfo(
+            label_asym_id=chain,
+            auth_asym_id=label_to_auth.get(chain, "?"),
+            entity_id=entity_id,
+            entity_type=entity_type,
+            molecule_id=mol_id,
+            pn_unit_id=pn_unit_id,
+            pn_unit_entity=pn_unit_entity,
+            molecule_entity=molecule_entity_map[mol_id],
+        )
+
+    return chain_info_dict, molecule_mapping
+
+
 def _add_molecule_id_column(
     loop: gemmi.cif.Loop,
     mapping: dict[str, int],
@@ -344,71 +434,10 @@ def assign_extended_ids(
     edges = _get_covalent_edges(block, covalent_types)
     entity_mapping = _get_entity_mapping(block)
 
-    # Compute molecule_id (connected components)
-    molecule_mapping = find_components(chain_order, edges)
-
-    # Extract entity types for pn_unit calculation
-    entity_types = {chain: entity_mapping.get(chain, ("?", "unknown"))[1] for chain in chain_order}
-
-    # Compute pn_unit_id (same-type connected components)
-    pn_unit_mapping = find_pn_units(chain_order, edges, entity_types)
-
-    # Group chains by molecule_id to compute molecule_entity
-    molecule_to_chains: dict[int, list[str]] = {}
-    for chain, mol_id in molecule_mapping.items():
-        if mol_id not in molecule_to_chains:
-            molecule_to_chains[mol_id] = []
-        molecule_to_chains[mol_id].append(chain)
-
-    # Compute molecule_entity (smallest entity_id in molecule)
-    molecule_entity_map: dict[int, str] = {}
-    for mol_id, chains in molecule_to_chains.items():
-        entity_ids = [
-            entity_mapping.get(c, ("?", "unknown"))[0]
-            for c in chains
-            if entity_mapping.get(c, ("?", "unknown"))[0] != "?"
-        ]
-        if entity_ids:
-            # Use smallest entity_id (numerically if possible, lexically otherwise)
-            try:
-                molecule_entity_map[mol_id] = str(min(int(e) for e in entity_ids))
-            except ValueError:
-                molecule_entity_map[mol_id] = min(entity_ids)
-        else:
-            molecule_entity_map[mol_id] = "?"
-
-    # Build ChainInfo for each chain
-    chain_info_dict: OrderedDict[str, ChainInfo] = OrderedDict()
-    for chain in chain_order:
-        entity_id, entity_type = entity_mapping.get(chain, ("?", "unknown"))
-        pn_unit_id = pn_unit_mapping.get(chain, chain)
-
-        # pn_unit_entity: entity_id of the pn_unit (should be same for all chains)
-        pn_members = pn_unit_id.split(",")
-        pn_entity_ids = [
-            entity_mapping.get(c, ("?", "unknown"))[0]
-            for c in pn_members
-            if entity_mapping.get(c, ("?", "unknown"))[0] != "?"
-        ]
-        if pn_entity_ids:
-            try:
-                pn_unit_entity = str(min(int(e) for e in pn_entity_ids))
-            except ValueError:
-                pn_unit_entity = min(pn_entity_ids)
-        else:
-            pn_unit_entity = "?"
-
-        mol_id = molecule_mapping[chain]
-        chain_info_dict[chain] = ChainInfo(
-            label_asym_id=chain,
-            auth_asym_id=label_to_auth.get(chain, "?"),
-            entity_id=entity_id,
-            entity_type=entity_type,
-            molecule_id=mol_id,
-            pn_unit_id=pn_unit_id,
-            pn_unit_entity=pn_unit_entity,
-            molecule_entity=molecule_entity_map[mol_id],
-        )
+    # Compute all extended IDs using shared helper
+    chain_info_dict, molecule_mapping = _compute_extended_chain_info(
+        chain_order, label_to_auth, edges, entity_mapping
+    )
 
     if output_path is not None:
         _add_molecule_id_column(atom_site_loop, molecule_mapping, label_idx)
@@ -537,70 +566,10 @@ def swap_auth_asym_id(
     edges = _get_covalent_edges(block, covalent_types)
     entity_mapping = _get_entity_mapping(block)
 
-    # Compute molecule_id (connected components)
-    molecule_mapping = find_components(chain_order, edges)
-
-    # Extract entity types for pn_unit calculation
-    entity_types = {chain: entity_mapping.get(chain, ("?", "unknown"))[1] for chain in chain_order}
-
-    # Compute pn_unit_id (same-type connected components)
-    pn_unit_mapping = find_pn_units(chain_order, edges, entity_types)
-
-    # Group chains by molecule_id to compute molecule_entity
-    molecule_to_chains: dict[int, list[str]] = {}
-    for chain, mol_id in molecule_mapping.items():
-        if mol_id not in molecule_to_chains:
-            molecule_to_chains[mol_id] = []
-        molecule_to_chains[mol_id].append(chain)
-
-    # Compute molecule_entity (smallest entity_id in molecule)
-    molecule_entity_map: dict[int, str] = {}
-    for mol_id, chains in molecule_to_chains.items():
-        entity_ids = [
-            entity_mapping.get(c, ("?", "unknown"))[0]
-            for c in chains
-            if entity_mapping.get(c, ("?", "unknown"))[0] != "?"
-        ]
-        if entity_ids:
-            try:
-                molecule_entity_map[mol_id] = str(min(int(e) for e in entity_ids))
-            except ValueError:
-                molecule_entity_map[mol_id] = min(entity_ids)
-        else:
-            molecule_entity_map[mol_id] = "?"
-
-    # Build ChainInfo for each chain
-    chain_info_dict: OrderedDict[str, ChainInfo] = OrderedDict()
-    for chain in chain_order:
-        entity_id, entity_type = entity_mapping.get(chain, ("?", "unknown"))
-        pn_unit_id = pn_unit_mapping.get(chain, chain)
-
-        # pn_unit_entity: entity_id of the pn_unit (should be same for all chains)
-        pn_members = pn_unit_id.split(",")
-        pn_entity_ids = [
-            entity_mapping.get(c, ("?", "unknown"))[0]
-            for c in pn_members
-            if entity_mapping.get(c, ("?", "unknown"))[0] != "?"
-        ]
-        if pn_entity_ids:
-            try:
-                pn_unit_entity = str(min(int(e) for e in pn_entity_ids))
-            except ValueError:
-                pn_unit_entity = min(pn_entity_ids)
-        else:
-            pn_unit_entity = "?"
-
-        mol_id = molecule_mapping[chain]
-        chain_info_dict[chain] = ChainInfo(
-            label_asym_id=chain,
-            auth_asym_id=label_to_auth.get(chain, "?"),
-            entity_id=entity_id,
-            entity_type=entity_type,
-            molecule_id=mol_id,
-            pn_unit_id=pn_unit_id,
-            pn_unit_entity=pn_unit_entity,
-            molecule_entity=molecule_entity_map[mol_id],
-        )
+    # Compute all extended IDs using shared helper
+    chain_info_dict, molecule_mapping = _compute_extended_chain_info(
+        chain_order, label_to_auth, edges, entity_mapping
+    )
 
     # Perform the swap
     _swap_auth_asym_id(atom_site_loop, chain_info_dict, swap_with, label_idx, preserve_original)

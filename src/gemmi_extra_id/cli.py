@@ -189,6 +189,8 @@ def assign(
             f"Assigned [cyan]{n_molecules}[/cyan] molecule_id(s) "
             f"to [cyan]{n_chains}[/cyan] chain(s)"
         )
+        if swap is not None:
+            console.print(f"Swapped auth_asym_id with [cyan]{swap}[/cyan]")
 
 
 if __name__ == "__main__":

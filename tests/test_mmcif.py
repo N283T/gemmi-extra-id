@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import gemmi
 import pytest
 
 from gemmi_extra_id.mmcif import (
@@ -307,8 +308,6 @@ class TestSwapAuthAsymId:
     @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
     def test_swap_with_molecule_id(self, tmp_path: Path) -> None:
         """Swaps auth_asym_id with molecule_id."""
-        import gemmi
-
         output_file = tmp_path / "output.cif"
 
         result = swap_auth_asym_id(
@@ -332,8 +331,6 @@ class TestSwapAuthAsymId:
     @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
     def test_swap_with_label_asym_id(self, tmp_path: Path) -> None:
         """Swaps auth_asym_id with label_asym_id."""
-        import gemmi
-
         output_file = tmp_path / "output.cif"
 
         swap_auth_asym_id(
@@ -355,8 +352,6 @@ class TestSwapAuthAsymId:
     @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
     def test_preserves_original_auth_asym_id(self, tmp_path: Path) -> None:
         """Original auth_asym_id is preserved in orig_auth_asym_id."""
-        import gemmi
-
         output_file = tmp_path / "output.cif"
 
         swap_auth_asym_id(
@@ -380,8 +375,6 @@ class TestSwapAuthAsymId:
     @pytest.mark.skipif(not _has_test_data("148L.cif"), reason="Test data not available")
     def test_no_preserve_original(self, tmp_path: Path) -> None:
         """No orig_auth_asym_id when preserve_original=False."""
-        import gemmi
-
         output_file = tmp_path / "output.cif"
 
         swap_auth_asym_id(
