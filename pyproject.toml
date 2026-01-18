@@ -26,6 +26,9 @@ cli = [
     "typer>=0.12",
     "rich>=13.0",
 ]
+hash = [
+    "networkx>=3.0",
+]
 
 
 [project.scripts]
