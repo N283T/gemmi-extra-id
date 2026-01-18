@@ -86,11 +86,11 @@ def find_pn_units(
     is_polymer: dict[str, bool] | None = None,
 ) -> dict[str, str]:
     """
-    Find pn_units (same-type connected components for non-polymers).
+    Find pn_units (connected components for non-polymers).
 
     AtomWorks-compatible behavior:
     - Polymer chains always have pn_unit_id = chain_id (never grouped)
-    - Non-polymer chains are grouped by entity_type and connected components
+    - Non-polymer chains are grouped by connected components only (not by entity_type)
 
     Args:
         nodes: Iterable of node identifiers (chain IDs).
