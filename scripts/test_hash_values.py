@@ -8,7 +8,6 @@ to AtomWorks, not just equivalent groupings.
 import contextlib
 import io
 import json
-import logging
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,7 +17,6 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-logger = logging.getLogger(__name__)
 console = Console()
 
 # PDB entries with known data quality issues
