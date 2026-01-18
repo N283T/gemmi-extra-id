@@ -93,6 +93,7 @@ _EXTENDED_HEADERS = [
     "entity_type",
     "molecule_id",
     "pn_unit_id",
+    "chain_entity",
     "pn_unit_entity",
     "molecule_entity",
 ]
@@ -118,6 +119,7 @@ def to_extended_csv(result: AssignmentResult) -> str:
                 info.entity_type,
                 info.molecule_id,
                 info.pn_unit_id,
+                info.chain_entity,
                 info.pn_unit_entity,
                 info.molecule_entity,
             ]
@@ -139,6 +141,7 @@ def to_extended_tsv(result: AssignmentResult) -> str:
                 info.entity_type,
                 info.molecule_id,
                 info.pn_unit_id,
+                info.chain_entity,
                 info.pn_unit_entity,
                 info.molecule_entity,
             ]
@@ -157,6 +160,7 @@ def to_extended_table(result: AssignmentResult) -> str:
         widths["entity_type"] = max(widths["entity_type"], len(info.entity_type))
         widths["molecule_id"] = max(widths["molecule_id"], len(str(info.molecule_id)))
         widths["pn_unit_id"] = max(widths["pn_unit_id"], len(info.pn_unit_id))
+        widths["chain_entity"] = max(widths["chain_entity"], len(info.chain_entity))
         widths["pn_unit_entity"] = max(widths["pn_unit_entity"], len(info.pn_unit_entity))
         widths["molecule_entity"] = max(widths["molecule_entity"], len(info.molecule_entity))
 
@@ -177,6 +181,7 @@ def to_extended_table(result: AssignmentResult) -> str:
                 info.entity_type,
                 str(info.molecule_id),
                 info.pn_unit_id,
+                info.chain_entity,
                 info.pn_unit_entity,
                 info.molecule_entity,
             )

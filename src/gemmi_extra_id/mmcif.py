@@ -25,6 +25,7 @@ class ChainInfo:
     entity_type: str
     molecule_id: int
     pn_unit_id: str
+    chain_entity: str
     pn_unit_entity: str
     molecule_entity: str
 
@@ -46,6 +47,7 @@ _ATOM_SITE_LABEL = "_atom_site.label_asym_id"
 _ATOM_SITE_AUTH = "_atom_site.auth_asym_id"
 _ATOM_SITE_MOLID = "_atom_site.molecule_id"
 _ATOM_SITE_SEQ_ID = "_atom_site.label_seq_id"
+_ATOM_SITE_AUTH_SEQ_ID = "_atom_site.auth_seq_id"
 _ATOM_SITE_INS_CODE = "_atom_site.pdbx_PDB_ins_code"
 _ATOM_SITE_COMP_ID = "_atom_site.label_comp_id"
 _STRUCT_CONN_TYPE = "_struct_conn.conn_type_id"
@@ -102,6 +104,10 @@ def _get_residue_info(
 ]:
     """Extract residue information per chain from atom_site loop.
 
+    Uses label_seq_id when available, but falls back to auth_seq_id for
+    non-polymers (like waters) where label_seq_id is often undefined ('.').
+    This matches AtomWorks behavior which uses biotite's res_id (auth_seq_id).
+
     Returns:
         Tuple of (chain_residues, residue_names) where:
         - chain_residues: Maps chain_id to list of (seq_id, ins_code) tuples
@@ -110,6 +116,7 @@ def _get_residue_info(
     tags = list(loop.tags)
     label_idx = tags.index(_ATOM_SITE_LABEL)
     seq_idx = tags.index(_ATOM_SITE_SEQ_ID) if _ATOM_SITE_SEQ_ID in tags else None
+    auth_seq_idx = tags.index(_ATOM_SITE_AUTH_SEQ_ID) if _ATOM_SITE_AUTH_SEQ_ID in tags else None
     ins_idx = tags.index(_ATOM_SITE_INS_CODE) if _ATOM_SITE_INS_CODE in tags else None
     comp_idx = tags.index(_ATOM_SITE_COMP_ID) if _ATOM_SITE_COMP_ID in tags else None
 
@@ -120,12 +127,15 @@ def _get_residue_info(
     for row_idx in range(loop.length()):
         chain = loop[row_idx, label_idx]
         seq_id = loop[row_idx, seq_idx] if seq_idx is not None else "."
+        auth_seq_id = loop[row_idx, auth_seq_idx] if auth_seq_idx is not None else "."
         ins_code = loop[row_idx, ins_idx] if ins_idx is not None else "."
         comp_id = loop[row_idx, comp_idx] if comp_idx is not None else "UNK"
 
-        # Normalize missing values
+        # Normalize missing values and use auth_seq_id as fallback
+        # This is important for non-polymers (especially waters) where
+        # label_seq_id is often undefined but auth_seq_id is unique per residue
         if seq_id in ("?", "."):
-            seq_id = "."
+            seq_id = auth_seq_id if auth_seq_id not in ("?", ".") else "."
         if ins_code in ("?", "."):
             ins_code = "."
 
@@ -385,12 +395,15 @@ def _compute_extended_chain_info(
         mol_id = molecule_mapping[chain]
 
         if hash_entities is not None:
-            # Use hash-based entity values
-            _, pn_unit_entity_map, molecule_entity_map_hash = hash_entities
+            # Use hash-based entity values (AtomWorks compatible)
+            chain_entity_map, pn_unit_entity_map, molecule_entity_map_hash = hash_entities
+            chain_entity = str(chain_entity_map.get(chain, 0))
             pn_unit_entity = str(pn_unit_entity_map.get(chain, 0))
             molecule_entity = str(molecule_entity_map_hash.get(chain, 0))
         else:
             # Default: use CIF entity_id based values
+            # chain_entity: same as CIF entity_id
+            chain_entity = entity_id
             # pn_unit_entity: smallest entity_id in the pn_unit
             pn_members = pn_unit_id.split(",")
             pn_entity_ids = [
@@ -414,6 +427,7 @@ def _compute_extended_chain_info(
             entity_type=entity_type,
             molecule_id=mol_id,
             pn_unit_id=pn_unit_id,
+            chain_entity=chain_entity,
             pn_unit_entity=pn_unit_entity,
             molecule_entity=molecule_entity,
         )
@@ -524,6 +538,7 @@ def _add_extended_mapping_loop(
             "entity_type",
             "molecule_id",
             "pn_unit_id",
+            "chain_entity",
             "pn_unit_entity",
             "molecule_entity",
         ],
@@ -538,6 +553,7 @@ def _add_extended_mapping_loop(
                 info.entity_type,
                 str(info.molecule_id),
                 info.pn_unit_id,
+                info.chain_entity,
                 info.pn_unit_entity,
                 info.molecule_entity,
             ]
