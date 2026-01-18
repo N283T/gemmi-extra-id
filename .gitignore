@@ -34,3 +34,11 @@ tests/data/from_pdb/
 # Claude Code
 .claude/
 CLAUDE.md
+
+# Work plans and notes
+plans/
+
+# Test results
+results*.json
+test*.log
+test_output.txt
