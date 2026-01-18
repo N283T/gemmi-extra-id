@@ -141,12 +141,14 @@ def _get_entity_mapping(
         Dict mapping label_asym_id to (entity_id, entity_type) tuple.
         Returns empty dict if required loops are missing.
     """
-    # First, build entity_id -> entity_type mapping from _entity loop
+    # First, build entity_id -> entity_type mapping from _entity category
     entity_types: dict[str, str] = {}
+
+    # Try loop format first (multiple entities)
     entity_col = block.find_loop(_ENTITY_ID)
-    if entity_col is not None:
+    if entity_col:  # Check truthy (nil column is falsy)
         loop = entity_col.get_loop()
-        if loop is not None:
+        if loop:
             tags = list(loop.tags)
             if _ENTITY_TYPE in tags:
                 id_idx = tags.index(_ENTITY_ID)
@@ -156,13 +158,21 @@ def _get_entity_mapping(
                     etype = loop[row_idx, type_idx]
                     if eid not in ("?", "."):
                         entity_types[eid] = etype if etype not in ("?", ".") else "unknown"
+    else:
+        # Try single-value format (single entity)
+        eid = block.find_value(_ENTITY_ID)
+        etype = block.find_value(_ENTITY_TYPE)
+        if eid and eid not in ("?", "."):
+            entity_types[eid] = etype if etype and etype not in ("?", ".") else "unknown"
 
     # Then, build label_asym_id -> (entity_id, entity_type) from _struct_asym
     result: dict[str, tuple[str, str]] = {}
+
+    # Try loop format first (multiple chains)
     asym_col = block.find_loop(_STRUCT_ASYM_ID)
-    if asym_col is not None:
+    if asym_col:  # Check truthy (nil column is falsy)
         loop = asym_col.get_loop()
-        if loop is not None:
+        if loop:
             tags = list(loop.tags)
             if _STRUCT_ASYM_ENTITY in tags:
                 id_idx = tags.index(_STRUCT_ASYM_ID)
@@ -173,6 +183,13 @@ def _get_entity_mapping(
                     if asym_id not in ("?", ".") and entity_id not in ("?", "."):
                         entity_type = entity_types.get(entity_id, "unknown")
                         result[asym_id] = (entity_id, entity_type)
+    else:
+        # Try single-value format (single chain)
+        asym_id = block.find_value(_STRUCT_ASYM_ID)
+        entity_id = block.find_value(_STRUCT_ASYM_ENTITY)
+        if asym_id and asym_id not in ("?", ".") and entity_id and entity_id not in ("?", "."):
+            entity_type = entity_types.get(entity_id, "unknown")
+            result[asym_id] = (entity_id, entity_type)
 
     return result
 
