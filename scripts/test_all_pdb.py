@@ -70,8 +70,15 @@ class CompareResult:
 
     pdb_id: str
     status: str  # "pass", "fail", "error"
-    gemmi_groups: set[frozenset[str]] = field(default_factory=set)
-    atomworks_groups: set[frozenset[str]] = field(default_factory=set)
+    # molecule_id groups
+    gemmi_mol_groups: set[frozenset[str]] = field(default_factory=set)
+    atomworks_mol_groups: set[frozenset[str]] = field(default_factory=set)
+    # pn_unit_id mappings (chain -> pn_unit_id)
+    gemmi_pn_units: dict[str, str] = field(default_factory=dict)
+    atomworks_pn_units: dict[str, str] = field(default_factory=dict)
+    # Failure details
+    mol_match: bool = True
+    pn_match: bool = True
     error: str | None = None
 
 
@@ -201,8 +208,16 @@ def load_with_fixed_nonpoly_res_id(cif_path: Path):
     return atom_array
 
 
-def extract_atomworks_molecule_groups(cif_path: Path) -> set[frozenset[str]]:
-    """Extract molecule grouping from AtomWorks with fixed non-polymer handling."""
+def extract_atomworks_ids(
+    cif_path: Path,
+) -> tuple[set[frozenset[str]], dict[str, str]]:
+    """Extract molecule grouping and pn_unit_id from AtomWorks.
+
+    Returns:
+        Tuple of (molecule_groups, pn_unit_mapping)
+        - molecule_groups: set of frozensets of chain IDs grouped by molecule_id
+        - pn_unit_mapping: dict mapping chain_id to pn_unit_id
+    """
     from atomworks.io.transforms.atom_array import (
         add_molecule_id_annotation,
         add_pn_unit_id_annotation,
@@ -215,55 +230,83 @@ def extract_atomworks_molecule_groups(cif_path: Path) -> set[frozenset[str]]:
         atom_array = add_molecule_id_annotation(atom_array)
 
     # chain_id -> molecule_id mapping
-    mapping: dict[str, int] = {}
+    mol_mapping: dict[str, int] = {}
+    # chain_id -> pn_unit_id mapping
+    pn_mapping: dict[str, str] = {}
+
     for i in range(len(atom_array)):
         chain = str(atom_array.chain_id[i])
-        mol_id = int(atom_array.molecule_id[i])
-        if chain not in mapping:
-            mapping[chain] = mol_id
+        if chain not in mol_mapping:
+            mol_mapping[chain] = int(atom_array.molecule_id[i])
+            pn_mapping[chain] = str(atom_array.pn_unit_id[i])
 
     # molecule_id -> set of chains
     groups: dict[int, set[str]] = {}
-    for chain, mol_id in mapping.items():
+    for chain, mol_id in mol_mapping.items():
         if mol_id not in groups:
             groups[mol_id] = set()
         groups[mol_id].add(chain)
 
-    return {frozenset(g) for g in groups.values()}
+    return {frozenset(g) for g in groups.values()}, pn_mapping
 
 
-def extract_gemmi_molecule_groups(cif_path: Path) -> set[frozenset[str]]:
-    """Extract molecule grouping from gemmi-extra-id."""
+def extract_gemmi_ids(cif_path: Path) -> tuple[set[frozenset[str]], dict[str, str]]:
+    """Extract molecule grouping and pn_unit_id from gemmi-extra-id.
+
+    Returns:
+        Tuple of (molecule_groups, pn_unit_mapping)
+        - molecule_groups: set of frozensets of chain IDs grouped by molecule_id
+        - pn_unit_mapping: dict mapping chain_id to pn_unit_id
+    """
     from gemmi_extra_id import assign_extended_ids
 
     result = assign_extended_ids(cif_path)
 
     # molecule_id -> set of chains
     groups: dict[int, set[str]] = {}
+    # chain_id -> pn_unit_id
+    pn_mapping: dict[str, str] = {}
+
     for chain, info in result.chain_info.items():
         mol_id = info.molecule_id
         if mol_id not in groups:
             groups[mol_id] = set()
         groups[mol_id].add(chain)
+        pn_mapping[chain] = info.pn_unit_id
 
-    return {frozenset(g) for g in groups.values()}
+    return {frozenset(g) for g in groups.values()}, pn_mapping
 
 
 def compare_one(cif_path: Path) -> CompareResult:
-    """Compare molecule groupings for a single CIF file."""
+    """Compare molecule_id and/or pn_unit_id for a single CIF file."""
     pdb_id = cif_path.stem.replace(".cif", "")
     try:
-        gemmi_groups = extract_gemmi_molecule_groups(cif_path)
-        atomworks_groups = extract_atomworks_molecule_groups(cif_path)
+        gemmi_mol_groups, gemmi_pn_units = extract_gemmi_ids(cif_path)
+        atomworks_mol_groups, atomworks_pn_units = extract_atomworks_ids(cif_path)
 
-        if gemmi_groups == atomworks_groups:
+        # Determine what to compare based on global mode
+        if _compare_mode == "molecule":
+            mol_match = gemmi_mol_groups == atomworks_mol_groups
+            pn_match = True  # Skip pn_unit comparison
+        elif _compare_mode == "pn_unit":
+            mol_match = True  # Skip molecule comparison
+            pn_match = gemmi_pn_units == atomworks_pn_units
+        else:  # "both"
+            mol_match = gemmi_mol_groups == atomworks_mol_groups
+            pn_match = gemmi_pn_units == atomworks_pn_units
+
+        if mol_match and pn_match:
             return CompareResult(pdb_id, "pass")
         else:
             return CompareResult(
                 pdb_id,
                 "fail",
-                gemmi_groups=gemmi_groups,
-                atomworks_groups=atomworks_groups,
+                gemmi_mol_groups=gemmi_mol_groups,
+                atomworks_mol_groups=atomworks_mol_groups,
+                gemmi_pn_units=gemmi_pn_units,
+                atomworks_pn_units=atomworks_pn_units,
+                mol_match=mol_match,
+                pn_match=pn_match,
             )
     except Exception as e:
         return CompareResult(pdb_id, "error", error=str(e))
@@ -275,61 +318,53 @@ def format_groups(groups: set[frozenset[str]]) -> str:
     return ", ".join("{" + ",".join(g) + "}" for g in sorted_groups)
 
 
+def format_pn_diff(gemmi: dict[str, str], atomworks: dict[str, str]) -> str:
+    """Format pn_unit_id differences for display."""
+    diffs = []
+    all_chains = set(gemmi.keys()) | set(atomworks.keys())
+    for chain in sorted(all_chains):
+        g_pn = gemmi.get(chain, "?")
+        a_pn = atomworks.get(chain, "?")
+        if g_pn != a_pn:
+            diffs.append(f"{chain}:[{g_pn}!={a_pn}]")
+    return ", ".join(diffs) if diffs else "(no diff)"
+
+
+def format_failure(result: CompareResult) -> str:
+    """Format failure details for display."""
+    parts = []
+    if not result.mol_match:
+        parts.append(
+            f"mol: gemmi={format_groups(result.gemmi_mol_groups)} "
+            f"vs aw={format_groups(result.atomworks_mol_groups)}"
+        )
+    if not result.pn_match:
+        parts.append(f"pn: {format_pn_diff(result.gemmi_pn_units, result.atomworks_pn_units)}")
+    return "; ".join(parts)
+
+
 app = typer.Typer(help="Compare gemmi-extra-id with AtomWorks extra-id assignment.")
 
 
-@app.command()
-def main(
-    pdb_mirror: Annotated[
-        Path, typer.Argument(help="Path to PDB mmCIF mirror directory or test data")
-    ],
-    output: Annotated[
-        Path | None, typer.Option("--output", "-o", help="Output JSON file for results")
-    ] = None,
-    workers: Annotated[
-        int, typer.Option("--workers", "-w", help="Number of parallel workers")
-    ] = os.cpu_count() or 4,
-    log: Annotated[Path | None, typer.Option("--log", "-l", help="Log file path")] = None,
-    limit: Annotated[
-        int | None, typer.Option("--limit", "-n", help="Limit number of files to process")
-    ] = None,
-    verbose: Annotated[
-        bool, typer.Option("--verbose", "-v", help="Show details of failed cases")
-    ] = False,
-    include_ignored: Annotated[
-        bool,
-        typer.Option("--include-ignored", help="Include entries in IGNORE_LIST"),
-    ] = False,
-) -> None:
-    """Compare gemmi-extra-id with AtomWorks extra-id assignment.
+# Global variable to control comparison mode (set by CLI)
+_compare_mode: str = "both"
 
-    Uses AtomWorks' lightweight load_any() function instead of parse()
-    to avoid heavy preprocessing while still getting molecule_id assignment.
+
+def _run_comparison(
+    cif_files: list[Path],
+    workers: int,
+    verbose: bool,
+    output: Path | None,
+) -> bool:
+    """Run comparison on a list of CIF files.
+
+    Returns True if all tests pass, False otherwise.
     """
-    setup_logging(log)
-
-    # Find all CIF files
-    console.print(f"Scanning [cyan]{pdb_mirror}[/cyan] for CIF files...")
-    cif_files = find_cif_files(pdb_mirror)
-
-    # Filter out entries in IGNORE_LIST (known PDB data quality issues)
-    ignored_count = 0
-    if not include_ignored:
-        original_count = len(cif_files)
-        cif_files = [f for f in cif_files if f.stem.split(".")[0] not in IGNORE_LIST]
-        ignored_count = original_count - len(cif_files)
-
-    if limit:
-        cif_files = cif_files[:limit]
-
     total = len(cif_files)
-    ignore_msg = f" (ignored {ignored_count})" if ignored_count > 0 else ""
     console.print(
-        f"Found [green]{total}[/green] CIF files{ignore_msg}, "
-        f"processing with [yellow]{workers}[/yellow] workers..."
+        f"Processing [green]{total}[/green] files with [yellow]{workers}[/yellow] workers..."
     )
-
-    logger.info(f"Found {total} CIF files{ignore_msg}, processing with {workers} workers...")
+    logger.info(f"Processing {total} files with {workers} workers...")
 
     passed: list[str] = []
     failed: list[CompareResult] = []
@@ -346,17 +381,10 @@ def main(
                 logger.info(f"PASS: {result.pdb_id}")
             elif result.status == "fail":
                 failed.append(result)
-                logger.warning(
-                    f"FAIL: {result.pdb_id} - "
-                    f"gemmi={format_groups(result.gemmi_groups)} vs "
-                    f"atomworks={format_groups(result.atomworks_groups)}"
-                )
+                failure_msg = format_failure(result)
+                logger.warning(f"FAIL: {result.pdb_id} - {failure_msg}")
                 if verbose:
-                    tqdm.write(
-                        f"FAIL: {result.pdb_id}: "
-                        f"gemmi={format_groups(result.gemmi_groups)} vs "
-                        f"atomworks={format_groups(result.atomworks_groups)}"
-                    )
+                    tqdm.write(f"FAIL: {result.pdb_id}: {failure_msg}")
             else:
                 errors.append(result)
                 logger.error(f"ERROR: {result.pdb_id} - {result.error}")
@@ -379,11 +407,7 @@ def main(
         console.print()
         console.print("[yellow]Failed cases (showing first 10):[/yellow]")
         for result in failed[:10]:
-            console.print(
-                f"  {result.pdb_id}: "
-                f"gemmi={format_groups(result.gemmi_groups)} vs "
-                f"atomworks={format_groups(result.atomworks_groups)}"
-            )
+            console.print(f"  {result.pdb_id}: {format_failure(result)}")
         if len(failed) > 10:
             console.print(f"  ... and {len(failed) - 10} more")
 
@@ -404,8 +428,12 @@ def main(
             "failed": [
                 {
                     "pdb_id": r.pdb_id,
-                    "gemmi_groups": [list(g) for g in r.gemmi_groups],
-                    "atomworks_groups": [list(g) for g in r.atomworks_groups],
+                    "mol_match": r.mol_match,
+                    "pn_match": r.pn_match,
+                    "gemmi_mol_groups": [list(g) for g in r.gemmi_mol_groups],
+                    "atomworks_mol_groups": [list(g) for g in r.atomworks_mol_groups],
+                    "gemmi_pn_units": r.gemmi_pn_units,
+                    "atomworks_pn_units": r.atomworks_pn_units,
                 }
                 for r in failed
             ],
@@ -416,7 +444,154 @@ def main(
         console.print(f"\nResults written to [cyan]{output}[/cyan]")
         logger.info(f"Results written to {output}")
 
-    if failed or errors:
+    return not (failed or errors)
+
+
+def _validate_compare_mode(compare: str) -> None:
+    """Validate and set compare mode."""
+    global _compare_mode
+    if compare not in ("molecule", "pn_unit", "both"):
+        console.print(f"[red]Invalid --compare value: {compare}[/red]")
+        console.print("Valid options: molecule, pn_unit, both")
+        raise typer.Exit(code=1)
+    _compare_mode = compare
+
+
+@app.command("all")
+def cmd_all(
+    pdb_mirror: Annotated[Path, typer.Argument(help="Path to PDB mmCIF mirror directory")],
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="Output JSON file for results")
+    ] = None,
+    workers: Annotated[
+        int, typer.Option("--workers", "-w", help="Number of parallel workers")
+    ] = os.cpu_count() or 4,
+    log: Annotated[Path | None, typer.Option("--log", "-l", help="Log file path")] = None,
+    limit: Annotated[
+        int | None, typer.Option("--limit", "-n", help="Limit number of files to process")
+    ] = None,
+    verbose: Annotated[
+        bool, typer.Option("--verbose", "-v", help="Show details of failed cases")
+    ] = False,
+    include_ignored: Annotated[
+        bool,
+        typer.Option("--include-ignored", help="Include entries in IGNORE_LIST"),
+    ] = False,
+    compare: Annotated[
+        str,
+        typer.Option("--compare", "-c", help="What to compare: molecule, pn_unit, or both"),
+    ] = "molecule",
+) -> None:
+    """Run comparison on entire PDB mirror."""
+    _validate_compare_mode(compare)
+    setup_logging(log)
+
+    # Find all CIF files
+    console.print(f"Scanning [cyan]{pdb_mirror}[/cyan] for CIF files...")
+    cif_files = find_cif_files(pdb_mirror)
+
+    # Filter out entries in IGNORE_LIST (known PDB data quality issues)
+    ignored_count = 0
+    if not include_ignored:
+        original_count = len(cif_files)
+        cif_files = [f for f in cif_files if f.stem.split(".")[0] not in IGNORE_LIST]
+        ignored_count = original_count - len(cif_files)
+
+    if limit:
+        cif_files = cif_files[:limit]
+
+    total = len(cif_files)
+    ignore_msg = f" (ignored {ignored_count})" if ignored_count > 0 else ""
+    console.print(f"Found [green]{total}[/green] CIF files{ignore_msg}")
+
+    if not _run_comparison(cif_files, workers, verbose, output):
+        raise typer.Exit(code=1)
+
+
+@app.command("subset")
+def cmd_subset(
+    test_dir: Annotated[Path, typer.Argument(help="Directory containing test CIF files")],
+    random: Annotated[
+        int, typer.Option("--random", "-r", help="Add N random entries from PDB mirror")
+    ] = 0,
+    output: Annotated[
+        Path | None, typer.Option("--output", "-o", help="Output JSON file for results")
+    ] = None,
+    workers: Annotated[
+        int, typer.Option("--workers", "-w", help="Number of parallel workers")
+    ] = os.cpu_count() or 4,
+    log: Annotated[Path | None, typer.Option("--log", "-l", help="Log file path")] = None,
+    verbose: Annotated[
+        bool, typer.Option("--verbose", "-v", help="Show details of failed cases")
+    ] = False,
+    include_ignored: Annotated[
+        bool,
+        typer.Option("--include-ignored", help="Include entries in IGNORE_LIST"),
+    ] = False,
+    compare: Annotated[
+        str,
+        typer.Option("--compare", "-c", help="What to compare: molecule, pn_unit, or both"),
+    ] = "molecule",
+) -> None:
+    """Run comparison on a subset of files with optional random additions.
+
+    Takes a directory of specific test cases. Optionally adds random entries
+    from the PDB mirror (requires GEMMI_PDB_DIR environment variable or
+    ~/.local/share/pdb).
+    """
+    import random as rand_module
+
+    _validate_compare_mode(compare)
+    setup_logging(log)
+
+    # Find CIF files in test directory
+    console.print(f"Scanning [cyan]{test_dir}[/cyan] for CIF files...")
+    cif_files = find_cif_files(test_dir)
+
+    # Filter out IGNORE_LIST if not included
+    if not include_ignored:
+        original_count = len(cif_files)
+        cif_files = [f for f in cif_files if f.stem.split(".")[0] not in IGNORE_LIST]
+        ignored_count = original_count - len(cif_files)
+        if ignored_count > 0:
+            console.print(f"[dim]Ignored {ignored_count} entries in IGNORE_LIST[/dim]")
+
+    test_pdb_ids = {f.stem.split(".")[0] for f in cif_files}
+    console.print(f"Found [green]{len(cif_files)}[/green] test files")
+
+    # Add random entries if requested
+    if random > 0:
+        # Get all PDB entries from mirror
+        all_pdb_files: list[Path] = []
+        for pdb_id in test_pdb_ids:
+            # Use first entry to find PDB mirror location
+            expanded = gemmi.expand_if_pdb_code(pdb_id)
+            if expanded:
+                pdb_mirror = Path(expanded).parent.parent.parent
+                console.print(f"Using PDB mirror: [cyan]{pdb_mirror}[/cyan]")
+                all_pdb_files = find_cif_files(pdb_mirror)
+                break
+
+        if not all_pdb_files:
+            console.print("[red]Could not find PDB mirror location[/red]")
+            raise typer.Exit(code=1)
+
+        # Filter out test cases and IGNORE_LIST
+        available = [
+            f
+            for f in all_pdb_files
+            if f.stem.split(".")[0] not in test_pdb_ids and f.stem.split(".")[0] not in IGNORE_LIST
+        ]
+
+        # Sample random entries
+        sample_size = min(random, len(available))
+        rand_module.seed(42)  # Reproducible sampling
+        random_files = rand_module.sample(available, sample_size)
+        console.print(f"Adding [green]{len(random_files)}[/green] random entries")
+
+        cif_files.extend(random_files)
+
+    if not _run_comparison(cif_files, workers, verbose, output):
         raise typer.Exit(code=1)
 
 
