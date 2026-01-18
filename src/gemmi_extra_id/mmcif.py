@@ -91,28 +91,33 @@ def _get_covalent_edges(
     block: gemmi.cif.Block,
     covalent_types: AbstractSet[str],
 ) -> list[tuple[str, str]]:
-    """Extract covalent bond edges from struct_conn loop."""
-    col = block.find_loop(_STRUCT_CONN_TYPE)
-    if col is None:
+    """Extract covalent bond edges from struct_conn.
+
+    Handles both loop format (multiple rows) and key-value format (single row).
+    """
+    # Use find_values which works for both loops and key-value pairs
+    conn_col = block.find_values(_STRUCT_CONN_TYPE)
+    if not conn_col:
         return []
 
-    loop = col.get_loop()
-    tags = list(loop.tags)
+    p1_col = block.find_values(_STRUCT_CONN_P1)
+    p2_col = block.find_values(_STRUCT_CONN_P2)
 
-    if _STRUCT_CONN_P1 not in tags or _STRUCT_CONN_P2 not in tags:
+    if not p1_col or not p2_col:
         return []
 
-    conn_idx = tags.index(_STRUCT_CONN_TYPE)
-    p1_idx = tags.index(_STRUCT_CONN_P1)
-    p2_idx = tags.index(_STRUCT_CONN_P2)
+    # All columns should have the same length
+    n_rows = len(conn_col)
+    if len(p1_col) != n_rows or len(p2_col) != n_rows:
+        return []
 
     edges: list[tuple[str, str]] = []
-    for row_idx in range(loop.length()):
-        conn_type = loop[row_idx, conn_idx].lower()
+    for i in range(n_rows):
+        conn_type = conn_col[i].lower()
         if conn_type not in covalent_types:
             continue
-        a = loop[row_idx, p1_idx]
-        b = loop[row_idx, p2_idx]
+        a = p1_col[i]
+        b = p2_col[i]
         if a in ("?", ".") or b in ("?", "."):
             continue
         edges.append((a, b))
@@ -141,31 +146,33 @@ def _get_entity_mapping(
     entity_col = block.find_loop(_ENTITY_ID)
     if entity_col is not None:
         loop = entity_col.get_loop()
-        tags = list(loop.tags)
-        if _ENTITY_TYPE in tags:
-            id_idx = tags.index(_ENTITY_ID)
-            type_idx = tags.index(_ENTITY_TYPE)
-            for row_idx in range(loop.length()):
-                eid = loop[row_idx, id_idx]
-                etype = loop[row_idx, type_idx]
-                if eid not in ("?", "."):
-                    entity_types[eid] = etype if etype not in ("?", ".") else "unknown"
+        if loop is not None:
+            tags = list(loop.tags)
+            if _ENTITY_TYPE in tags:
+                id_idx = tags.index(_ENTITY_ID)
+                type_idx = tags.index(_ENTITY_TYPE)
+                for row_idx in range(loop.length()):
+                    eid = loop[row_idx, id_idx]
+                    etype = loop[row_idx, type_idx]
+                    if eid not in ("?", "."):
+                        entity_types[eid] = etype if etype not in ("?", ".") else "unknown"
 
     # Then, build label_asym_id -> (entity_id, entity_type) from _struct_asym
     result: dict[str, tuple[str, str]] = {}
     asym_col = block.find_loop(_STRUCT_ASYM_ID)
     if asym_col is not None:
         loop = asym_col.get_loop()
-        tags = list(loop.tags)
-        if _STRUCT_ASYM_ENTITY in tags:
-            id_idx = tags.index(_STRUCT_ASYM_ID)
-            entity_idx = tags.index(_STRUCT_ASYM_ENTITY)
-            for row_idx in range(loop.length()):
-                asym_id = loop[row_idx, id_idx]
-                entity_id = loop[row_idx, entity_idx]
-                if asym_id not in ("?", ".") and entity_id not in ("?", "."):
-                    entity_type = entity_types.get(entity_id, "unknown")
-                    result[asym_id] = (entity_id, entity_type)
+        if loop is not None:
+            tags = list(loop.tags)
+            if _STRUCT_ASYM_ENTITY in tags:
+                id_idx = tags.index(_STRUCT_ASYM_ID)
+                entity_idx = tags.index(_STRUCT_ASYM_ENTITY)
+                for row_idx in range(loop.length()):
+                    asym_id = loop[row_idx, id_idx]
+                    entity_id = loop[row_idx, entity_idx]
+                    if asym_id not in ("?", ".") and entity_id not in ("?", "."):
+                        entity_type = entity_types.get(entity_id, "unknown")
+                        result[asym_id] = (entity_id, entity_type)
 
     return result
 
