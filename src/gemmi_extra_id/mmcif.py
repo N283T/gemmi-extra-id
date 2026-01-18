@@ -45,9 +45,16 @@ class AssignmentResult:
 _ATOM_SITE_LABEL = "_atom_site.label_asym_id"
 _ATOM_SITE_AUTH = "_atom_site.auth_asym_id"
 _ATOM_SITE_MOLID = "_atom_site.molecule_id"
+_ATOM_SITE_SEQ_ID = "_atom_site.label_seq_id"
+_ATOM_SITE_INS_CODE = "_atom_site.pdbx_PDB_ins_code"
+_ATOM_SITE_COMP_ID = "_atom_site.label_comp_id"
 _STRUCT_CONN_TYPE = "_struct_conn.conn_type_id"
 _STRUCT_CONN_P1 = "_struct_conn.ptnr1_label_asym_id"
 _STRUCT_CONN_P2 = "_struct_conn.ptnr2_label_asym_id"
+_STRUCT_CONN_P1_SEQ = "_struct_conn.ptnr1_label_seq_id"
+_STRUCT_CONN_P2_SEQ = "_struct_conn.ptnr2_label_seq_id"
+_STRUCT_CONN_P1_INS = "_struct_conn.pdbx_ptnr1_PDB_ins_code"
+_STRUCT_CONN_P2_INS = "_struct_conn.pdbx_ptnr2_PDB_ins_code"
 _MOLID_MAP_CATEGORY = "_molecule_id_map."
 
 # Entity tags
@@ -85,6 +92,121 @@ def _get_chain_info(
             label_to_auth[label] = loop[row_idx, auth_idx]
 
     return order, label_to_auth, label_idx
+
+
+def _get_residue_info(
+    loop: gemmi.cif.Loop,
+) -> tuple[
+    dict[str, list[tuple[str, str]]],  # chain -> [(seq_id, ins_code), ...]
+    dict[str, dict[tuple[str, str], str]],  # chain -> {(seq_id, ins_code): comp_id}
+]:
+    """Extract residue information per chain from atom_site loop.
+
+    Returns:
+        Tuple of (chain_residues, residue_names) where:
+        - chain_residues: Maps chain_id to list of (seq_id, ins_code) tuples
+        - residue_names: Maps chain_id to {(seq_id, ins_code): comp_id}
+    """
+    tags = list(loop.tags)
+    label_idx = tags.index(_ATOM_SITE_LABEL)
+    seq_idx = tags.index(_ATOM_SITE_SEQ_ID) if _ATOM_SITE_SEQ_ID in tags else None
+    ins_idx = tags.index(_ATOM_SITE_INS_CODE) if _ATOM_SITE_INS_CODE in tags else None
+    comp_idx = tags.index(_ATOM_SITE_COMP_ID) if _ATOM_SITE_COMP_ID in tags else None
+
+    chain_residues: dict[str, list[tuple[str, str]]] = {}
+    residue_names: dict[str, dict[tuple[str, str], str]] = {}
+    seen: dict[str, set[tuple[str, str]]] = {}
+
+    for row_idx in range(loop.length()):
+        chain = loop[row_idx, label_idx]
+        seq_id = loop[row_idx, seq_idx] if seq_idx is not None else "."
+        ins_code = loop[row_idx, ins_idx] if ins_idx is not None else "."
+        comp_id = loop[row_idx, comp_idx] if comp_idx is not None else "UNK"
+
+        # Normalize missing values
+        if seq_id in ("?", "."):
+            seq_id = "."
+        if ins_code in ("?", "."):
+            ins_code = "."
+
+        res_key = (seq_id, ins_code)
+
+        if chain not in chain_residues:
+            chain_residues[chain] = []
+            residue_names[chain] = {}
+            seen[chain] = set()
+
+        if res_key not in seen[chain]:
+            chain_residues[chain].append(res_key)
+            residue_names[chain][res_key] = comp_id
+            seen[chain].add(res_key)
+
+    return chain_residues, residue_names
+
+
+def _get_residue_bonds(
+    block: gemmi.cif.Block,
+    covalent_types: AbstractSet[str],
+) -> tuple[
+    dict[str, list[tuple[tuple[str, str], tuple[str, str]]]],  # intra-chain bonds
+    list[tuple[str, str]],  # inter-chain bonds (chain level)
+]:
+    """Extract residue-level covalent bonds from struct_conn.
+
+    Returns:
+        Tuple of (intra_chain_bonds, inter_chain_bonds) where:
+        - intra_chain_bonds: Maps chain_id to list of ((seq1, ins1), (seq2, ins2)) tuples
+        - inter_chain_bonds: List of (chain1, chain2) tuples for cross-chain bonds
+    """
+    conn_col = block.find_values(_STRUCT_CONN_TYPE)
+    if not conn_col:
+        return {}, []
+
+    p1_chain = block.find_values(_STRUCT_CONN_P1)
+    p2_chain = block.find_values(_STRUCT_CONN_P2)
+    p1_seq = block.find_values(_STRUCT_CONN_P1_SEQ)
+    p2_seq = block.find_values(_STRUCT_CONN_P2_SEQ)
+    p1_ins = block.find_values(_STRUCT_CONN_P1_INS)
+    p2_ins = block.find_values(_STRUCT_CONN_P2_INS)
+
+    if not all([p1_chain, p2_chain]):
+        return {}, []
+
+    n_rows = len(conn_col)
+    intra_chain_bonds: dict[str, list[tuple[tuple[str, str], tuple[str, str]]]] = {}
+    inter_chain_bonds: list[tuple[str, str]] = []
+
+    for i in range(n_rows):
+        conn_type = conn_col[i].lower()
+        if conn_type not in covalent_types:
+            continue
+
+        c1 = p1_chain[i]
+        c2 = p2_chain[i]
+        if c1 in ("?", ".") or c2 in ("?", "."):
+            continue
+
+        s1 = p1_seq[i] if p1_seq and i < len(p1_seq) else "."
+        s2 = p2_seq[i] if p2_seq and i < len(p2_seq) else "."
+        i1 = p1_ins[i] if p1_ins and i < len(p1_ins) else "."
+        i2 = p2_ins[i] if p2_ins and i < len(p2_ins) else "."
+
+        # Normalize
+        s1 = s1 if s1 not in ("?", ".") else "."
+        s2 = s2 if s2 not in ("?", ".") else "."
+        i1 = i1 if i1 not in ("?", ".") else "."
+        i2 = i2 if i2 not in ("?", ".") else "."
+
+        if c1 == c2:
+            # Intra-chain bond
+            if c1 not in intra_chain_bonds:
+                intra_chain_bonds[c1] = []
+            intra_chain_bonds[c1].append(((s1, i1), (s2, i2)))
+        else:
+            # Inter-chain bond
+            inter_chain_bonds.append((c1, c2))
+
+    return intra_chain_bonds, inter_chain_bonds
 
 
 def _get_covalent_edges(
@@ -199,6 +321,7 @@ def _compute_extended_chain_info(
     label_to_auth: dict[str, str],
     edges: list[tuple[str, str]],
     entity_mapping: dict[str, tuple[str, str]],
+    hash_entities: tuple[dict[str, int], dict[str, int], dict[str, int]] | None = None,
 ) -> tuple[OrderedDict[str, ChainInfo], dict[str, int]]:
     """
     Compute all extended IDs for chains.
@@ -211,6 +334,9 @@ def _compute_extended_chain_info(
         label_to_auth: Mapping from label_asym_id to auth_asym_id.
         edges: List of covalent bond edges (chain pairs).
         entity_mapping: Mapping from label_asym_id to (entity_id, entity_type).
+        hash_entities: Optional tuple of (chain_entity_map, pn_unit_entity_map, molecule_entity_map)
+            computed via graph hashing. If provided, uses these values for
+            pn_unit_entity and molecule_entity fields.
 
     Returns:
         Tuple of (chain_info_dict, molecule_mapping).
@@ -256,23 +382,31 @@ def _compute_extended_chain_info(
     for chain in chain_order:
         entity_id, entity_type = entity_mapping.get(chain, ("?", "unknown"))
         pn_unit_id = pn_unit_mapping.get(chain, chain)
-
-        # pn_unit_entity: entity_id of the pn_unit (should be same for all chains)
-        pn_members = pn_unit_id.split(",")
-        pn_entity_ids = [
-            entity_mapping.get(c, ("?", "unknown"))[0]
-            for c in pn_members
-            if entity_mapping.get(c, ("?", "unknown"))[0] != "?"
-        ]
-        if pn_entity_ids:
-            try:
-                pn_unit_entity = str(min(int(e) for e in pn_entity_ids))
-            except ValueError:
-                pn_unit_entity = min(pn_entity_ids)
-        else:
-            pn_unit_entity = "?"
-
         mol_id = molecule_mapping[chain]
+
+        if hash_entities is not None:
+            # Use hash-based entity values
+            _, pn_unit_entity_map, molecule_entity_map_hash = hash_entities
+            pn_unit_entity = str(pn_unit_entity_map.get(chain, 0))
+            molecule_entity = str(molecule_entity_map_hash.get(chain, 0))
+        else:
+            # Default: use CIF entity_id based values
+            # pn_unit_entity: smallest entity_id in the pn_unit
+            pn_members = pn_unit_id.split(",")
+            pn_entity_ids = [
+                entity_mapping.get(c, ("?", "unknown"))[0]
+                for c in pn_members
+                if entity_mapping.get(c, ("?", "unknown"))[0] != "?"
+            ]
+            if pn_entity_ids:
+                try:
+                    pn_unit_entity = str(min(int(e) for e in pn_entity_ids))
+                except ValueError:
+                    pn_unit_entity = min(pn_entity_ids)
+            else:
+                pn_unit_entity = "?"
+            molecule_entity = molecule_entity_map[mol_id]
+
         chain_info_dict[chain] = ChainInfo(
             label_asym_id=chain,
             auth_asym_id=label_to_auth.get(chain, "?"),
@@ -281,7 +415,7 @@ def _compute_extended_chain_info(
             molecule_id=mol_id,
             pn_unit_id=pn_unit_id,
             pn_unit_entity=pn_unit_entity,
-            molecule_entity=molecule_entity_map[mol_id],
+            molecule_entity=molecule_entity,
         )
 
     return chain_info_dict, molecule_mapping
@@ -414,6 +548,7 @@ def assign_extended_ids(
     input_path: str | Path,
     output_path: str | Path | None = None,
     covalent_types: AbstractSet[str] | None = None,
+    use_hash: bool = False,
 ) -> AssignmentResult:
     """
     Assign all extended IDs to mmCIF file based on covalent connectivity.
@@ -430,6 +565,8 @@ def assign_extended_ids(
         output_path: Path to output mmCIF file. If None, no file is written.
         covalent_types: Set of conn_type_id values to treat as covalent bonds.
             Defaults to {"covale", "disulf"}.
+        use_hash: If True, compute entity IDs using Weisfeiler-Lehman graph hashing
+            (AtomWorks compatible). Requires networkx. Defaults to False.
 
     Returns:
         AssignmentResult containing ChainInfo for each chain.
@@ -437,6 +574,7 @@ def assign_extended_ids(
     Raises:
         ValueError: If required mmCIF tags are missing.
         FileNotFoundError: If input file does not exist.
+        ImportError: If use_hash=True but networkx is not installed.
     """
     if covalent_types is None:
         covalent_types = DEFAULT_COVALENT_TYPES
@@ -461,9 +599,38 @@ def assign_extended_ids(
     edges = _get_covalent_edges(block, covalent_types)
     entity_mapping = _get_entity_mapping(block)
 
+    # Compute hash entities if requested
+    hash_entities = None
+    if use_hash:
+        from gemmi_extra_id.graph_hash import compute_hash_entities
+
+        # Extract residue-level information for graph hashing
+        chain_residues, residue_names = _get_residue_info(atom_site_loop)
+        intra_chain_bonds, inter_chain_bonds = _get_residue_bonds(block, covalent_types)
+
+        # Compute molecule and pn_unit mappings for hash computation
+        molecule_mapping_temp = find_components(chain_order, edges)
+        entity_types = {
+            chain: entity_mapping.get(chain, ("?", "unknown"))[1] for chain in chain_order
+        }
+        is_polymer = {
+            chain: entity_types.get(chain, "unknown") == "polymer" for chain in chain_order
+        }
+        pn_unit_mapping = find_pn_units(chain_order, edges, entity_types, is_polymer)
+
+        hash_entities = compute_hash_entities(
+            chain_order=chain_order,
+            molecule_mapping=molecule_mapping_temp,
+            pn_unit_mapping=pn_unit_mapping,
+            chain_residues=chain_residues,
+            residue_names=residue_names,
+            intra_chain_bonds=intra_chain_bonds,
+            inter_chain_bonds=inter_chain_bonds,
+        )
+
     # Compute all extended IDs using shared helper
     chain_info_dict, molecule_mapping = _compute_extended_chain_info(
-        chain_order, label_to_auth, edges, entity_mapping
+        chain_order, label_to_auth, edges, entity_mapping, hash_entities
     )
 
     if output_path is not None:

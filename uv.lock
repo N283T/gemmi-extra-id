@@ -375,6 +375,9 @@ cli = [
     { name = "rich" },
     { name = "typer" },
 ]
+hash = [
+    { name = "networkx" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -399,10 +402,11 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "gemmi", specifier = ">=0.7.4" },
+    { name = "networkx", marker = "extra == 'hash'", specifier = ">=3.0" },
     { name = "rich", marker = "extra == 'cli'", specifier = ">=13.0" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12" },
 ]
-provides-extras = ["cli"]
+provides-extras = ["cli", "hash"]
 
 [package.metadata.requires-dev]
 dev = [
