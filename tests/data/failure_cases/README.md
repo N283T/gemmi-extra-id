@@ -43,12 +43,61 @@ _entity.type polymer
 
 Run regression tests:
 ```bash
-# Test failure cases only
+# Test molecule_id and pn_unit_id
 uv run python scripts/test_all_pdb.py subset tests/data/failure_cases -c both
 
-# Test failure cases + 100 random entries
-uv run python scripts/test_all_pdb.py subset tests/data/failure_cases -c both -r 100
+# Test entity equivalence relations only
+uv run python scripts/test_all_pdb.py subset tests/data/failure_cases -c entity
+
+# Test all (molecule_id + pn_unit_id + entity)
+uv run python scripts/test_all_pdb.py subset tests/data/failure_cases -c all
+
+# Test with 100 random entries from PDB mirror
+uv run python scripts/test_all_pdb.py subset tests/data/failure_cases -c all -r 100
 ```
+
+### Comparison Modes
+
+| Mode | Description |
+|------|-------------|
+| `molecule` | Compare molecule_id grouping |
+| `pn_unit` | Compare pn_unit_id mapping |
+| `both` | Compare molecule_id + pn_unit_id |
+| `entity` | Compare entity equivalence relations (chain_entity, pn_unit_entity, molecule_entity) |
+| `all` | Compare molecule_id + pn_unit_id + entity |
+
+## Entity Field Comparison
+
+### Why Values Differ
+
+AtomWorks and gemmi-extra-id produce **different values** for entity fields but with **equivalent semantic meaning**:
+
+| Field | AtomWorks | gemmi-extra-id |
+|-------|-----------|----------------|
+| chain_entity | Graph hash of residue structure (0-indexed) | CIF `_struct_asym.entity_id` |
+| pn_unit_entity | Graph hash of chain_entity composition | Minimum entity_id in pn_unit |
+| molecule_entity | Graph hash of pn_unit_entity composition | Minimum entity_id in molecule |
+
+**AtomWorks approach**:
+- Computes a hash of the graph structure at each level
+- Chains with identical residue sequences get the same `chain_entity`
+- Uses 0-indexed integers assigned in order of first occurrence
+
+**gemmi-extra-id approach**:
+- Uses PDB's official `entity_id` from CIF file
+- Chains with the same `entity_id` belong to the same molecular entity
+- Uses 1-indexed integers from CIF
+
+### Equivalence Relation
+
+Both approaches produce the **same groupings** (equivalence relations):
+
+```
+AtomWorks:  {A: 0, B: 0, C: 1}  →  equivalence groups: {{A, B}, {C}}
+gemmi:      {A: 1, B: 1, C: 2}  →  equivalence groups: {{A, B}, {C}}
+```
+
+The test compares these equivalence groups, not the raw values.
 
 ## File List
 
