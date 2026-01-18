@@ -259,12 +259,17 @@ def compute_hash_entities(
         mol_chain_set = set(mol_chains)
 
         inter_pn_unit_bonds: list[tuple[str, str]] = []
+        seen_edges: set[tuple[str, str]] = set()
         for a, b in inter_chain_edges:
             if a in mol_chain_set and b in mol_chain_set:
                 pn_a = chain_to_pn_unit[a]
                 pn_b = chain_to_pn_unit[b]
-                if pn_a != pn_b and (pn_a, pn_b) not in inter_pn_unit_bonds:
-                    inter_pn_unit_bonds.append((pn_a, pn_b))
+                if pn_a != pn_b:
+                    # Normalize edge direction to avoid duplicates
+                    edge = (min(pn_a, pn_b), max(pn_a, pn_b))
+                    if edge not in seen_edges:
+                        inter_pn_unit_bonds.append(edge)
+                        seen_edges.add(edge)
 
         # Get pn_unit_entity values for pn_units in this molecule
         pn_unit_entities_for_mol = {
