@@ -76,15 +76,39 @@ class CompareResult:
     # pn_unit_id mappings (chain -> pn_unit_id)
     gemmi_pn_units: dict[str, str] = field(default_factory=dict)
     atomworks_pn_units: dict[str, str] = field(default_factory=dict)
+    # Entity equivalence groups (set of chains with same entity value)
+    gemmi_chain_entity_groups: set[frozenset[str]] = field(default_factory=set)
+    atomworks_chain_entity_groups: set[frozenset[str]] = field(default_factory=set)
+    gemmi_pn_unit_entity_groups: set[frozenset[str]] = field(default_factory=set)
+    atomworks_pn_unit_entity_groups: set[frozenset[str]] = field(default_factory=set)
+    gemmi_mol_entity_groups: set[frozenset[str]] = field(default_factory=set)
+    atomworks_mol_entity_groups: set[frozenset[str]] = field(default_factory=set)
     # Failure details
     mol_match: bool = True
     pn_match: bool = True
+    chain_entity_match: bool = True
+    pn_unit_entity_match: bool = True
+    mol_entity_match: bool = True
     error: str | None = None
 
 
 def find_cif_files(mirror_path: Path) -> list[Path]:
     """Find all CIF files in directory using gemmi.CifWalk."""
     return [Path(cif_str) for cif_str in gemmi.CifWalk(str(mirror_path))]
+
+
+def to_equivalence_groups(mapping: dict[str, int | str]) -> set[frozenset[str]]:
+    """Convert a value mapping to equivalence groups.
+
+    Example:
+        {"A": 1, "B": 1, "C": 2} -> {frozenset({"A", "B"}), frozenset({"C"})}
+    """
+    value_to_keys: dict[int | str, set[str]] = {}
+    for key, value in mapping.items():
+        if value not in value_to_keys:
+            value_to_keys[value] = set()
+        value_to_keys[value].add(key)
+    return {frozenset(keys) for keys in value_to_keys.values()}
 
 
 @contextlib.contextmanager
@@ -208,37 +232,48 @@ def load_with_fixed_nonpoly_res_id(cif_path: Path):
     return atom_array
 
 
-def extract_atomworks_ids(
-    cif_path: Path,
-) -> tuple[set[frozenset[str]], dict[str, str]]:
-    """Extract molecule grouping and pn_unit_id from AtomWorks.
+@dataclass
+class AtomWorksResult:
+    """Result from AtomWorks extraction."""
+
+    mol_groups: set[frozenset[str]]
+    pn_mapping: dict[str, str]
+    chain_entity_groups: set[frozenset[str]]
+    pn_unit_entity_groups: set[frozenset[str]]
+    mol_entity_groups: set[frozenset[str]]
+
+
+def extract_atomworks_ids(cif_path: Path) -> AtomWorksResult:
+    """Extract molecule grouping, pn_unit_id, and entity fields from AtomWorks.
 
     Returns:
-        Tuple of (molecule_groups, pn_unit_mapping)
-        - molecule_groups: set of frozensets of chain IDs grouped by molecule_id
-        - pn_unit_mapping: dict mapping chain_id to pn_unit_id
+        AtomWorksResult with molecule groups, pn_unit mapping, and entity groups.
     """
-    from atomworks.io.transforms.atom_array import (
-        add_molecule_id_annotation,
-        add_pn_unit_id_annotation,
-    )
+    from atomworks.io.transforms.atom_array import add_id_and_entity_annotations
 
     with warnings.catch_warnings(), suppress_output():
         warnings.simplefilter("ignore")
         atom_array = load_with_fixed_nonpoly_res_id(cif_path)
-        atom_array = add_pn_unit_id_annotation(atom_array)
-        atom_array = add_molecule_id_annotation(atom_array)
+        # Use add_id_and_entity_annotations which adds all 6 annotations
+        atom_array = add_id_and_entity_annotations(atom_array)
 
     # chain_id -> molecule_id mapping
     mol_mapping: dict[str, int] = {}
     # chain_id -> pn_unit_id mapping
     pn_mapping: dict[str, str] = {}
+    # Entity mappings (chain_id -> entity value)
+    chain_entity_mapping: dict[str, int] = {}
+    pn_unit_entity_mapping: dict[str, int] = {}
+    mol_entity_mapping: dict[str, int] = {}
 
     for i in range(len(atom_array)):
         chain = str(atom_array.chain_id[i])
         if chain not in mol_mapping:
             mol_mapping[chain] = int(atom_array.molecule_id[i])
             pn_mapping[chain] = str(atom_array.pn_unit_id[i])
+            chain_entity_mapping[chain] = int(atom_array.chain_entity[i])
+            pn_unit_entity_mapping[chain] = int(atom_array.pn_unit_entity[i])
+            mol_entity_mapping[chain] = int(atom_array.molecule_entity[i])
 
     # molecule_id -> set of chains
     groups: dict[int, set[str]] = {}
@@ -247,16 +282,31 @@ def extract_atomworks_ids(
             groups[mol_id] = set()
         groups[mol_id].add(chain)
 
-    return {frozenset(g) for g in groups.values()}, pn_mapping
+    return AtomWorksResult(
+        mol_groups={frozenset(g) for g in groups.values()},
+        pn_mapping=pn_mapping,
+        chain_entity_groups=to_equivalence_groups(chain_entity_mapping),
+        pn_unit_entity_groups=to_equivalence_groups(pn_unit_entity_mapping),
+        mol_entity_groups=to_equivalence_groups(mol_entity_mapping),
+    )
 
 
-def extract_gemmi_ids(cif_path: Path) -> tuple[set[frozenset[str]], dict[str, str]]:
-    """Extract molecule grouping and pn_unit_id from gemmi-extra-id.
+@dataclass
+class GemmiResult:
+    """Result from gemmi-extra-id extraction."""
+
+    mol_groups: set[frozenset[str]]
+    pn_mapping: dict[str, str]
+    chain_entity_groups: set[frozenset[str]]
+    pn_unit_entity_groups: set[frozenset[str]]
+    mol_entity_groups: set[frozenset[str]]
+
+
+def extract_gemmi_ids(cif_path: Path) -> GemmiResult:
+    """Extract molecule grouping, pn_unit_id, and entity fields from gemmi-extra-id.
 
     Returns:
-        Tuple of (molecule_groups, pn_unit_mapping)
-        - molecule_groups: set of frozensets of chain IDs grouped by molecule_id
-        - pn_unit_mapping: dict mapping chain_id to pn_unit_id
+        GemmiResult with molecule groups, pn_unit mapping, and entity groups.
     """
     from gemmi_extra_id import assign_extended_ids
 
@@ -266,6 +316,10 @@ def extract_gemmi_ids(cif_path: Path) -> tuple[set[frozenset[str]], dict[str, st
     groups: dict[int, set[str]] = {}
     # chain_id -> pn_unit_id
     pn_mapping: dict[str, str] = {}
+    # Entity mappings (use entity_id for chain_entity, pn_unit_entity, molecule_entity)
+    chain_entity_mapping: dict[str, str] = {}
+    pn_unit_entity_mapping: dict[str, str] = {}
+    mol_entity_mapping: dict[str, str] = {}
 
     for chain, info in result.chain_info.items():
         mol_id = info.molecule_id
@@ -273,40 +327,91 @@ def extract_gemmi_ids(cif_path: Path) -> tuple[set[frozenset[str]], dict[str, st
             groups[mol_id] = set()
         groups[mol_id].add(chain)
         pn_mapping[chain] = info.pn_unit_id
+        # Use entity_id as chain_entity (CIF entity)
+        chain_entity_mapping[chain] = info.entity_id
+        pn_unit_entity_mapping[chain] = info.pn_unit_entity
+        mol_entity_mapping[chain] = info.molecule_entity
 
-    return {frozenset(g) for g in groups.values()}, pn_mapping
+    return GemmiResult(
+        mol_groups={frozenset(g) for g in groups.values()},
+        pn_mapping=pn_mapping,
+        chain_entity_groups=to_equivalence_groups(chain_entity_mapping),
+        pn_unit_entity_groups=to_equivalence_groups(pn_unit_entity_mapping),
+        mol_entity_groups=to_equivalence_groups(mol_entity_mapping),
+    )
 
 
 def compare_one(cif_path: Path) -> CompareResult:
-    """Compare molecule_id and/or pn_unit_id for a single CIF file."""
+    """Compare molecule_id, pn_unit_id, and entity fields for a single CIF file."""
     pdb_id = cif_path.stem.replace(".cif", "")
     try:
-        gemmi_mol_groups, gemmi_pn_units = extract_gemmi_ids(cif_path)
-        atomworks_mol_groups, atomworks_pn_units = extract_atomworks_ids(cif_path)
+        gemmi_result = extract_gemmi_ids(cif_path)
+        atomworks_result = extract_atomworks_ids(cif_path)
+
+        # Initialize all matches as True
+        mol_match = True
+        pn_match = True
+        chain_entity_match = True
+        pn_unit_entity_match = True
+        mol_entity_match = True
 
         # Determine what to compare based on global mode
         if _compare_mode == "molecule":
-            mol_match = gemmi_mol_groups == atomworks_mol_groups
-            pn_match = True  # Skip pn_unit comparison
+            mol_match = gemmi_result.mol_groups == atomworks_result.mol_groups
         elif _compare_mode == "pn_unit":
-            mol_match = True  # Skip molecule comparison
-            pn_match = gemmi_pn_units == atomworks_pn_units
-        else:  # "both"
-            mol_match = gemmi_mol_groups == atomworks_mol_groups
-            pn_match = gemmi_pn_units == atomworks_pn_units
+            pn_match = gemmi_result.pn_mapping == atomworks_result.pn_mapping
+        elif _compare_mode == "entity":
+            # Compare entity equivalence relations only
+            chain_entity_match = (
+                gemmi_result.chain_entity_groups == atomworks_result.chain_entity_groups
+            )
+            pn_unit_entity_match = (
+                gemmi_result.pn_unit_entity_groups == atomworks_result.pn_unit_entity_groups
+            )
+            mol_entity_match = gemmi_result.mol_entity_groups == atomworks_result.mol_entity_groups
+        elif _compare_mode == "all":
+            mol_match = gemmi_result.mol_groups == atomworks_result.mol_groups
+            pn_match = gemmi_result.pn_mapping == atomworks_result.pn_mapping
+            chain_entity_match = (
+                gemmi_result.chain_entity_groups == atomworks_result.chain_entity_groups
+            )
+            pn_unit_entity_match = (
+                gemmi_result.pn_unit_entity_groups == atomworks_result.pn_unit_entity_groups
+            )
+            mol_entity_match = gemmi_result.mol_entity_groups == atomworks_result.mol_entity_groups
+        else:  # "both" (molecule + pn_unit)
+            mol_match = gemmi_result.mol_groups == atomworks_result.mol_groups
+            pn_match = gemmi_result.pn_mapping == atomworks_result.pn_mapping
 
-        if mol_match and pn_match:
+        all_match = (
+            mol_match
+            and pn_match
+            and chain_entity_match
+            and pn_unit_entity_match
+            and mol_entity_match
+        )
+
+        if all_match:
             return CompareResult(pdb_id, "pass")
         else:
             return CompareResult(
                 pdb_id,
                 "fail",
-                gemmi_mol_groups=gemmi_mol_groups,
-                atomworks_mol_groups=atomworks_mol_groups,
-                gemmi_pn_units=gemmi_pn_units,
-                atomworks_pn_units=atomworks_pn_units,
+                gemmi_mol_groups=gemmi_result.mol_groups,
+                atomworks_mol_groups=atomworks_result.mol_groups,
+                gemmi_pn_units=gemmi_result.pn_mapping,
+                atomworks_pn_units=atomworks_result.pn_mapping,
+                gemmi_chain_entity_groups=gemmi_result.chain_entity_groups,
+                atomworks_chain_entity_groups=atomworks_result.chain_entity_groups,
+                gemmi_pn_unit_entity_groups=gemmi_result.pn_unit_entity_groups,
+                atomworks_pn_unit_entity_groups=atomworks_result.pn_unit_entity_groups,
+                gemmi_mol_entity_groups=gemmi_result.mol_entity_groups,
+                atomworks_mol_entity_groups=atomworks_result.mol_entity_groups,
                 mol_match=mol_match,
                 pn_match=pn_match,
+                chain_entity_match=chain_entity_match,
+                pn_unit_entity_match=pn_unit_entity_match,
+                mol_entity_match=mol_entity_match,
             )
     except Exception as e:
         return CompareResult(pdb_id, "error", error=str(e))
@@ -330,6 +435,15 @@ def format_pn_diff(gemmi: dict[str, str], atomworks: dict[str, str]) -> str:
     return ", ".join(diffs) if diffs else "(no diff)"
 
 
+def format_entity_diff(
+    gemmi_groups: set[frozenset[str]], atomworks_groups: set[frozenset[str]]
+) -> str:
+    """Format entity equivalence group differences for display."""
+    if gemmi_groups == atomworks_groups:
+        return "(match)"
+    return f"gemmi={format_groups(gemmi_groups)} vs aw={format_groups(atomworks_groups)}"
+
+
 def format_failure(result: CompareResult) -> str:
     """Format failure details for display."""
     parts = []
@@ -340,6 +454,21 @@ def format_failure(result: CompareResult) -> str:
         )
     if not result.pn_match:
         parts.append(f"pn: {format_pn_diff(result.gemmi_pn_units, result.atomworks_pn_units)}")
+    if not result.chain_entity_match:
+        diff = format_entity_diff(
+            result.gemmi_chain_entity_groups, result.atomworks_chain_entity_groups
+        )
+        parts.append(f"chain_entity: {diff}")
+    if not result.pn_unit_entity_match:
+        diff = format_entity_diff(
+            result.gemmi_pn_unit_entity_groups, result.atomworks_pn_unit_entity_groups
+        )
+        parts.append(f"pn_unit_entity: {diff}")
+    if not result.mol_entity_match:
+        diff = format_entity_diff(
+            result.gemmi_mol_entity_groups, result.atomworks_mol_entity_groups
+        )
+        parts.append(f"mol_entity: {diff}")
     return "; ".join(parts)
 
 
@@ -430,10 +559,23 @@ def _run_comparison(
                     "pdb_id": r.pdb_id,
                     "mol_match": r.mol_match,
                     "pn_match": r.pn_match,
+                    "chain_entity_match": r.chain_entity_match,
+                    "pn_unit_entity_match": r.pn_unit_entity_match,
+                    "mol_entity_match": r.mol_entity_match,
                     "gemmi_mol_groups": [list(g) for g in r.gemmi_mol_groups],
                     "atomworks_mol_groups": [list(g) for g in r.atomworks_mol_groups],
                     "gemmi_pn_units": r.gemmi_pn_units,
                     "atomworks_pn_units": r.atomworks_pn_units,
+                    "gemmi_chain_entity_groups": [list(g) for g in r.gemmi_chain_entity_groups],
+                    "atomworks_chain_entity_groups": [
+                        list(g) for g in r.atomworks_chain_entity_groups
+                    ],
+                    "gemmi_pn_unit_entity_groups": [list(g) for g in r.gemmi_pn_unit_entity_groups],
+                    "atomworks_pn_unit_entity_groups": [
+                        list(g) for g in r.atomworks_pn_unit_entity_groups
+                    ],
+                    "gemmi_mol_entity_groups": [list(g) for g in r.gemmi_mol_entity_groups],
+                    "atomworks_mol_entity_groups": [list(g) for g in r.atomworks_mol_entity_groups],
                 }
                 for r in failed
             ],
@@ -450,9 +592,10 @@ def _run_comparison(
 def _validate_compare_mode(compare: str) -> None:
     """Validate and set compare mode."""
     global _compare_mode
-    if compare not in ("molecule", "pn_unit", "both"):
+    valid_modes = ("molecule", "pn_unit", "both", "entity", "all")
+    if compare not in valid_modes:
         console.print(f"[red]Invalid --compare value: {compare}[/red]")
-        console.print("Valid options: molecule, pn_unit, both")
+        console.print(f"Valid options: {', '.join(valid_modes)}")
         raise typer.Exit(code=1)
     _compare_mode = compare
 
@@ -479,7 +622,7 @@ def cmd_all(
     ] = False,
     compare: Annotated[
         str,
-        typer.Option("--compare", "-c", help="What to compare: molecule, pn_unit, or both"),
+        typer.Option("--compare", "-c", help="molecule|pn_unit|both|entity|all"),
     ] = "molecule",
 ) -> None:
     """Run comparison on entire PDB mirror."""
@@ -530,7 +673,7 @@ def cmd_subset(
     ] = False,
     compare: Annotated[
         str,
-        typer.Option("--compare", "-c", help="What to compare: molecule, pn_unit, or both"),
+        typer.Option("--compare", "-c", help="molecule|pn_unit|both|entity|all"),
     ] = "molecule",
 ) -> None:
     """Run comparison on a subset of files with optional random additions.
