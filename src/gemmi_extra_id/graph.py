@@ -115,7 +115,8 @@ def find_pn_units(
             if is_polymer.get(node, False):
                 pn_unit_mapping[node] = node
 
-        # Non-polymer chains: find connected components within same entity_type
+        # Non-polymer chains: find connected components (NO entity_type grouping)
+        # AtomWorks groups non-polymers by connectivity only, regardless of entity_type
         non_polymer_nodes = [n for n in node_list if not is_polymer.get(n, False)]
         non_polymer_set = set(non_polymer_nodes)
 
@@ -124,28 +125,17 @@ def find_pn_units(
             (a, b) for a, b in edge_list if a in non_polymer_set and b in non_polymer_set
         ]
 
-        # Group non-polymer nodes by entity_type
-        type_to_nodes: dict[str, list[str]] = defaultdict(list)
-        for node in non_polymer_nodes:
-            etype = entity_types.get(node, "unknown")
-            type_to_nodes[etype].append(node)
+        # Find connected components among all non-polymers directly
+        components = find_components(non_polymer_nodes, non_polymer_edges)
 
-        # Find connected components within each type
-        for _etype, typed_nodes in type_to_nodes.items():
-            typed_node_set = set(typed_nodes)
-            typed_edges = [
-                (a, b) for a, b in non_polymer_edges if a in typed_node_set and b in typed_node_set
-            ]
-            components = find_components(typed_nodes, typed_edges)
+        component_to_nodes: dict[int, list[str]] = defaultdict(list)
+        for node, comp_id in components.items():
+            component_to_nodes[comp_id].append(node)
 
-            component_to_nodes: dict[int, list[str]] = defaultdict(list)
-            for node, comp_id in components.items():
-                component_to_nodes[comp_id].append(node)
-
-            for comp_nodes in component_to_nodes.values():
-                pn_unit_id = ",".join(sorted(comp_nodes))
-                for node in comp_nodes:
-                    pn_unit_mapping[node] = pn_unit_id
+        for comp_nodes in component_to_nodes.values():
+            pn_unit_id = ",".join(sorted(comp_nodes))
+            for node in comp_nodes:
+                pn_unit_mapping[node] = pn_unit_id
 
         return pn_unit_mapping
 

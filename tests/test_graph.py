@@ -196,7 +196,7 @@ class TestFindPnUnitsAtomWorksCompatible:
         assert result["D"] == "D"
 
     def test_mixed_types_non_polymer_grouping(self) -> None:
-        """Non-polymers of different entity types are not grouped together."""
+        """Non-polymers of different entity types ARE grouped when connected."""
         nodes = ["A", "B", "C", "D"]
         edges = [("B", "C")]  # B(branched)-C(non-polymer) connected
         entity_types = {
@@ -209,13 +209,13 @@ class TestFindPnUnitsAtomWorksCompatible:
         result = find_pn_units(nodes, edges, entity_types, is_polymer)
         # Polymer is separate
         assert result["A"] == "A"
-        # branched and non-polymer are different types, so separate
-        assert result["B"] == "B"
-        assert result["C"] == "C"
+        # branched and non-polymer are grouped by connectivity (not entity_type)
+        assert result["B"] == result["C"] == "B,C"
+        # D is isolated
         assert result["D"] == "D"
 
-    def test_non_polymers_same_type_grouped(self) -> None:
-        """Non-polymers of same type connected are grouped."""
+    def test_non_polymers_connected_grouped(self) -> None:
+        """Non-polymers connected by edges are grouped regardless of entity_type."""
         nodes = ["A", "B", "C", "D", "E"]
         edges = [("B", "C"), ("D", "E")]  # B-C, D-E both non-polymer
         entity_types = {
@@ -230,3 +230,25 @@ class TestFindPnUnitsAtomWorksCompatible:
         assert result["A"] == "A"
         assert result["B"] == result["C"] == "B,C"
         assert result["D"] == result["E"] == "D,E"
+
+    def test_146d_case_branched_nonpolymer_grouped(self) -> None:
+        """146d.cif case: branched (C,D) and non-polymer (H) connected via covale."""
+        # In 146d, chains C and D are branched, H is non-polymer
+        # H-C and H-D are connected via covale bonds
+        # AtomWorks groups them all together: pn_unit_id = "C,D,H"
+        nodes = ["A", "B", "C", "D", "H"]
+        edges = [("C", "H"), ("D", "H")]  # H connects to both C and D
+        entity_types = {
+            "A": "polymer",
+            "B": "polymer",
+            "C": "branched",
+            "D": "branched",
+            "H": "non-polymer",
+        }
+        is_polymer = {"A": True, "B": True, "C": False, "D": False, "H": False}
+        result = find_pn_units(nodes, edges, entity_types, is_polymer)
+        # Polymers are separate
+        assert result["A"] == "A"
+        assert result["B"] == "B"
+        # All non-polymers connected form one group
+        assert result["C"] == result["D"] == result["H"] == "C,D,H"
