@@ -83,17 +83,21 @@ def find_pn_units(
     nodes: Iterable[str],
     edges: Iterable[tuple[str, str]],
     entity_types: dict[str, str],
+    is_polymer: dict[str, bool] | None = None,
 ) -> dict[str, str]:
     """
-    Find pn_units (same-type connected components).
+    Find pn_units (same-type connected components for non-polymers).
 
-    A pn_unit is a group of covalently linked chains that share the same entity type
-    (e.g., polymer, non-polymer, branched, water).
+    AtomWorks-compatible behavior:
+    - Polymer chains always have pn_unit_id = chain_id (never grouped)
+    - Non-polymer chains are grouped by entity_type and connected components
 
     Args:
         nodes: Iterable of node identifiers (chain IDs).
         edges: Iterable of (node_a, node_b) pairs representing covalent connections.
         entity_types: Dict mapping each node to its entity type.
+        is_polymer: Dict mapping each node to whether it's a polymer chain.
+            If None, uses legacy behavior (all chains can be grouped by type).
 
     Returns:
         Dict mapping each node to its pn_unit_id (comma-separated sorted list of
@@ -102,30 +106,64 @@ def find_pn_units(
     node_list = list(nodes)
     edge_list = list(edges)
 
-    # Group nodes by entity_type
-    type_to_nodes: dict[str, list[str]] = defaultdict(list)
+    pn_unit_mapping: dict[str, str] = {}
+
+    # If is_polymer is provided, use AtomWorks-compatible behavior
+    if is_polymer is not None:
+        # Polymer chains: each is its own pn_unit
+        for node in node_list:
+            if is_polymer.get(node, False):
+                pn_unit_mapping[node] = node
+
+        # Non-polymer chains: find connected components within same entity_type
+        non_polymer_nodes = [n for n in node_list if not is_polymer.get(n, False)]
+        non_polymer_set = set(non_polymer_nodes)
+
+        # Filter edges to non-polymer chains only
+        non_polymer_edges = [
+            (a, b) for a, b in edge_list if a in non_polymer_set and b in non_polymer_set
+        ]
+
+        # Group non-polymer nodes by entity_type
+        type_to_nodes: dict[str, list[str]] = defaultdict(list)
+        for node in non_polymer_nodes:
+            etype = entity_types.get(node, "unknown")
+            type_to_nodes[etype].append(node)
+
+        # Find connected components within each type
+        for _etype, typed_nodes in type_to_nodes.items():
+            typed_node_set = set(typed_nodes)
+            typed_edges = [
+                (a, b) for a, b in non_polymer_edges if a in typed_node_set and b in typed_node_set
+            ]
+            components = find_components(typed_nodes, typed_edges)
+
+            component_to_nodes: dict[int, list[str]] = defaultdict(list)
+            for node, comp_id in components.items():
+                component_to_nodes[comp_id].append(node)
+
+            for comp_nodes in component_to_nodes.values():
+                pn_unit_id = ",".join(sorted(comp_nodes))
+                for node in comp_nodes:
+                    pn_unit_mapping[node] = pn_unit_id
+
+        return pn_unit_mapping
+
+    # Legacy behavior: group all chains by entity_type (for backward compatibility)
+    type_to_nodes = defaultdict(list)
     for node in node_list:
         etype = entity_types.get(node, "unknown")
         type_to_nodes[etype].append(node)
 
-    # Build pn_unit_id mapping
-    pn_unit_mapping: dict[str, str] = {}
-
     for _etype, typed_nodes in type_to_nodes.items():
         typed_node_set = set(typed_nodes)
-
-        # Filter edges to only include edges between nodes of this type
         typed_edges = [(a, b) for a, b in edge_list if a in typed_node_set and b in typed_node_set]
-
-        # Find connected components within this type
         components = find_components(typed_nodes, typed_edges)
 
-        # Group nodes by component
         component_to_nodes: dict[int, list[str]] = defaultdict(list)
         for node, comp_id in components.items():
             component_to_nodes[comp_id].append(node)
 
-        # Assign pn_unit_id as comma-separated sorted chain list
         for comp_nodes in component_to_nodes.values():
             pn_unit_id = ",".join(sorted(comp_nodes))
             for node in comp_nodes:

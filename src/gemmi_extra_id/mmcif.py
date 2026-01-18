@@ -204,8 +204,11 @@ def _compute_extended_chain_info(
     # Extract entity types for pn_unit calculation
     entity_types = {chain: entity_mapping.get(chain, ("?", "unknown"))[1] for chain in chain_order}
 
-    # Compute pn_unit_id (same-type connected components)
-    pn_unit_mapping = find_pn_units(chain_order, edges, entity_types)
+    # Determine which chains are polymers (entity_type == "polymer")
+    is_polymer = {chain: entity_types.get(chain, "unknown") == "polymer" for chain in chain_order}
+
+    # Compute pn_unit_id (AtomWorks-compatible: polymers never grouped)
+    pn_unit_mapping = find_pn_units(chain_order, edges, entity_types, is_polymer)
 
     # Group chains by molecule_id to compute molecule_entity
     molecule_to_chains: dict[int, list[str]] = {}
