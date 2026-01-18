@@ -80,11 +80,12 @@ class TestFindPnUnits:
         result = find_pn_units(nodes, edges, entity_types)
         assert result == {"A": "A", "B": "B", "C": "C"}
 
-    def test_single_type_with_edges(self) -> None:
-        """Chains of same type connected by edges share pn_unit."""
+    def test_single_type_with_edges_legacy(self) -> None:
+        """Legacy behavior: Chains of same type connected by edges share pn_unit."""
         nodes = ["A", "B", "C"]
         edges = [("A", "B")]
         entity_types = {"A": "polymer", "B": "polymer", "C": "polymer"}
+        # Without is_polymer param, uses legacy behavior
         result = find_pn_units(nodes, edges, entity_types)
         assert result["A"] == result["B"] == "A,B"
         assert result["C"] == "C"
@@ -100,11 +101,12 @@ class TestFindPnUnits:
         assert result["B"] == "B"
         assert result["C"] == "C"
 
-    def test_multiple_components_same_type(self) -> None:
-        """Multiple disconnected components within same type."""
+    def test_multiple_components_same_type_legacy(self) -> None:
+        """Legacy behavior: Multiple connected components within same type."""
         nodes = ["A", "B", "C", "D"]
         edges = [("A", "B"), ("C", "D")]
         entity_types = {"A": "polymer", "B": "polymer", "C": "polymer", "D": "polymer"}
+        # Without is_polymer param, uses legacy behavior
         result = find_pn_units(nodes, edges, entity_types)
         assert result["A"] == result["B"] == "A,B"
         assert result["C"] == result["D"] == "C,D"
@@ -133,3 +135,98 @@ class TestFindPnUnits:
         """Empty nodes and edges returns empty mapping."""
         result = find_pn_units([], [], {})
         assert result == {}
+
+
+class TestFindPnUnitsAtomWorksCompatible:
+    """Tests for find_pn_units with AtomWorks-compatible behavior (is_polymer param)."""
+
+    def test_polymers_never_grouped(self) -> None:
+        """AtomWorks: Polymers are never grouped, even when connected."""
+        nodes = ["A", "B", "C"]
+        edges = [("A", "B")]  # A-B connected by covale
+        entity_types = {"A": "polymer", "B": "polymer", "C": "polymer"}
+        is_polymer = {"A": True, "B": True, "C": True}
+        result = find_pn_units(nodes, edges, entity_types, is_polymer)
+        # Each polymer is its own pn_unit
+        assert result["A"] == "A"
+        assert result["B"] == "B"
+        assert result["C"] == "C"
+
+    def test_non_polymers_can_be_grouped(self) -> None:
+        """AtomWorks: Non-polymers can be grouped when connected."""
+        nodes = ["A", "B", "C", "D"]
+        edges = [("C", "D")]  # C-D connected (non-polymers)
+        entity_types = {
+            "A": "polymer",
+            "B": "polymer",
+            "C": "non-polymer",
+            "D": "non-polymer",
+        }
+        is_polymer = {"A": True, "B": True, "C": False, "D": False}
+        result = find_pn_units(nodes, edges, entity_types, is_polymer)
+        # Polymers are separate
+        assert result["A"] == "A"
+        assert result["B"] == "B"
+        # Non-polymers are grouped
+        assert result["C"] == result["D"] == "C,D"
+
+    def test_polymer_nonpolymer_edge_ignored(self) -> None:
+        """AtomWorks: Edge between polymer and non-polymer doesn't affect grouping."""
+        nodes = ["A", "B", "C"]
+        edges = [("A", "B"), ("B", "C")]  # A(polymer)-B(non-polymer)-C(non-polymer)
+        entity_types = {"A": "polymer", "B": "non-polymer", "C": "non-polymer"}
+        is_polymer = {"A": True, "B": False, "C": False}
+        result = find_pn_units(nodes, edges, entity_types, is_polymer)
+        # Polymer A is separate
+        assert result["A"] == "A"
+        # Non-polymers B-C are grouped
+        assert result["B"] == result["C"] == "B,C"
+
+    def test_488d_case_polymer_covale(self) -> None:
+        """488d.cif case: chains B-D are polymers connected by covale."""
+        nodes = ["A", "B", "C", "D"]
+        edges = [("B", "D")]  # B-D polymer covale
+        entity_types = {"A": "polymer", "B": "polymer", "C": "polymer", "D": "polymer"}
+        is_polymer = {"A": True, "B": True, "C": True, "D": True}
+        result = find_pn_units(nodes, edges, entity_types, is_polymer)
+        # Each polymer is separate (AtomWorks behavior)
+        assert result["A"] == "A"
+        assert result["B"] == "B"
+        assert result["C"] == "C"
+        assert result["D"] == "D"
+
+    def test_mixed_types_non_polymer_grouping(self) -> None:
+        """Non-polymers of different entity types are not grouped together."""
+        nodes = ["A", "B", "C", "D"]
+        edges = [("B", "C")]  # B(branched)-C(non-polymer) connected
+        entity_types = {
+            "A": "polymer",
+            "B": "branched",
+            "C": "non-polymer",
+            "D": "non-polymer",
+        }
+        is_polymer = {"A": True, "B": False, "C": False, "D": False}
+        result = find_pn_units(nodes, edges, entity_types, is_polymer)
+        # Polymer is separate
+        assert result["A"] == "A"
+        # branched and non-polymer are different types, so separate
+        assert result["B"] == "B"
+        assert result["C"] == "C"
+        assert result["D"] == "D"
+
+    def test_non_polymers_same_type_grouped(self) -> None:
+        """Non-polymers of same type connected are grouped."""
+        nodes = ["A", "B", "C", "D", "E"]
+        edges = [("B", "C"), ("D", "E")]  # B-C, D-E both non-polymer
+        entity_types = {
+            "A": "polymer",
+            "B": "non-polymer",
+            "C": "non-polymer",
+            "D": "non-polymer",
+            "E": "non-polymer",
+        }
+        is_polymer = {"A": True, "B": False, "C": False, "D": False, "E": False}
+        result = find_pn_units(nodes, edges, entity_types, is_polymer)
+        assert result["A"] == "A"
+        assert result["B"] == result["C"] == "B,C"
+        assert result["D"] == result["E"] == "D,E"
