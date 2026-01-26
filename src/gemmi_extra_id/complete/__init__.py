@@ -118,8 +118,12 @@ def _get_atoms_from_atom_site(
 def _get_residue_sequence_from_atom_site(
     block: gemmi.cif.Block,
     chain_id: str,
+    entity_type: str = "",
 ) -> list[tuple[int, str]]:
     """Get residue sequence from _atom_site for a chain.
+
+    For water chains (entity_type="water"), uses auth_seq_id to distinguish
+    individual water molecules, since all waters have label_seq_id=".".
 
     Returns:
         List of (res_id, res_name) tuples for each residue.
@@ -143,9 +147,14 @@ def _get_residue_sequence_from_atom_site(
     asym_idx = get_idx("_atom_site.label_asym_id")
     comp_idx = get_idx("_atom_site.label_comp_id")
     seq_idx = get_idx("_atom_site.label_seq_id")
+    auth_seq_idx = get_idx("_atom_site.auth_seq_id")
 
     if asym_idx is None or comp_idx is None:
         return result
+
+    # For water chains, use auth_seq_id to distinguish molecules
+    is_water = entity_type.lower() == "water"
+    use_auth_seq = is_water and auth_seq_idx is not None
 
     # Track current residue number for non-polymer
     current_res_num = 0
@@ -156,7 +165,12 @@ def _get_residue_sequence_from_atom_site(
             continue
 
         res_name = loop[row_idx, comp_idx]
-        seq_id = loop[row_idx, seq_idx] if seq_idx is not None else "."
+
+        # Use auth_seq_id for water, label_seq_id otherwise
+        if use_auth_seq:
+            seq_id = loop[row_idx, auth_seq_idx]
+        else:
+            seq_id = loop[row_idx, seq_idx] if seq_idx is not None else "."
 
         # Assign residue ID
         try:
@@ -373,7 +387,9 @@ def assign_extended_ids_complete(
                 residue_sequence = [(i + 1, mon_id) for i, (_, mon_id) in enumerate(canon_seq)]
             else:
                 # Fallback to atom_site for non-polymer chains
-                residue_sequence = _get_residue_sequence_from_atom_site(block, chain_id)
+                residue_sequence = _get_residue_sequence_from_atom_site(
+                    block, chain_id, meta.entity_type
+                )
 
             if not residue_sequence:
                 # Empty chain

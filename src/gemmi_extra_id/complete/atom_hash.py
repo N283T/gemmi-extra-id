@@ -250,11 +250,6 @@ def build_normalized_atom_graph(
     for res_idx, (res_id, res_name) in enumerate(residue_sequence):
         comp = load_ccd_component(res_name, ccd_path)
 
-        if comp is None:
-            # No CCD data - skip this residue or use placeholder
-            logger.debug(f"No CCD template for {res_name}, skipping")
-            continue
-
         # Determine if this is a terminal residue (for leaving atom handling)
         is_last = res_idx == n_residues - 1
 
@@ -262,15 +257,22 @@ def build_normalized_atom_graph(
         res_atoms: list[str] = []
         res_elements: list[str] = []
 
-        for atom_name, element in zip(comp.atoms, comp.elements, strict=True):
-            # Skip hydrogens if requested
-            if remove_hydrogens and element == "H":
-                continue
-            # Skip leaving atoms for non-terminal residues
-            if not is_last and atom_name in LEAVING_ATOMS:
-                continue
-            res_atoms.append(atom_name)
-            res_elements.append(element)
+        if comp is None:
+            # No CCD data - use residue name as a single-atom placeholder
+            # This handles simple ions (CA, MN, etc.) that aren't in CCD
+            logger.debug(f"No CCD template for {res_name}, using residue name as placeholder")
+            res_atoms = [res_name]
+            res_elements = [res_name]
+        else:
+            for atom_name, element in zip(comp.atoms, comp.elements, strict=True):
+                # Skip hydrogens if requested
+                if remove_hydrogens and element == "H":
+                    continue
+                # Skip leaving atoms for non-terminal residues
+                if not is_last and atom_name in LEAVING_ATOMS:
+                    continue
+                res_atoms.append(atom_name)
+                res_elements.append(element)
 
         if not res_atoms:
             continue
