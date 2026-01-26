@@ -18,9 +18,12 @@ if TYPE_CHECKING:
 ResKey = tuple[str, str]
 
 
-@dataclass
-class ChainInfo:
-    """Enhanced chain information for complete mode."""
+@dataclass(frozen=True)
+class ChainMetadata:
+    """Chain metadata from CIF for complete mode entity assignment.
+
+    This is distinct from mmcif.ChainMetadata which contains assigned IDs.
+    """
 
     chain_id: str  # label_asym_id
     entity_id: str
@@ -279,7 +282,7 @@ def get_struct_asym_mapping(
 
 def get_chain_info_complete(
     block: gemmi.cif.Block,
-) -> dict[str, ChainInfo]:
+) -> dict[str, ChainMetadata]:
     """Get complete chain information from CIF.
 
     Combines information from _entity, _entity_poly, and _struct_asym
@@ -289,7 +292,7 @@ def get_chain_info_complete(
         block: mmCIF data block.
 
     Returns:
-        Dict mapping chain_id (label_asym_id) to ChainInfo.
+        Dict mapping chain_id (label_asym_id) to ChainMetadata.
     """
     # Get entity type info
     entity_types = get_entity_info(block)
@@ -300,8 +303,8 @@ def get_chain_info_complete(
     # Get chain -> entity mapping
     asym_mapping = get_struct_asym_mapping(block)
 
-    # Build ChainInfo for each chain
-    result: dict[str, ChainInfo] = {}
+    # Build ChainMetadata for each chain
+    result: dict[str, ChainMetadata] = {}
 
     for chain_id, entity_id in asym_mapping.items():
         entity_type = entity_types.get(entity_id, "unknown")
@@ -311,7 +314,7 @@ def get_chain_info_complete(
         if entity_id in polymer_info:
             polymer_type = polymer_info[entity_id][0]
 
-        result[chain_id] = ChainInfo(
+        result[chain_id] = ChainMetadata(
             chain_id=chain_id,
             entity_id=entity_id,
             entity_type=entity_type,
@@ -423,7 +426,7 @@ def get_struct_conn_bonds(
 
 __all__ = [
     "ResKey",
-    "ChainInfo",
+    "ChainMetadata",
     "AtomBond",
     "get_canonical_sequences",
     "get_entity_info",

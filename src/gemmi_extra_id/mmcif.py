@@ -331,8 +331,7 @@ def _get_canonical_sequences(
 ) -> dict[str, list[tuple[tuple[str, str], str]]]:
     """Get canonical sequences from _entity_poly_seq.
 
-    This is a wrapper around the complete module's implementation,
-    exported for use by test scripts and external code.
+    Internal wrapper for backward compatibility with test scripts.
 
     Args:
         block: mmCIF data block.
