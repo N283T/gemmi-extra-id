@@ -85,6 +85,47 @@ def compute_chain_entity_hash(
     return hash_graph(graph, node_attr="node")
 
 
+def compute_chain_atom_entity_hash(
+    atom_names: Sequence[str],
+    elements: Sequence[str],
+    res_names: Sequence[str],
+    res_ids: Sequence[int],
+    chem_types: Sequence[str] | None = None,
+    ccd_path: str = "",
+) -> str:
+    """Compute chain entity hash using atomic-level WL graph hashing.
+
+    This uses CCD bond information to build an atomic-level graph for
+    more accurate entity matching with AtomWorks.
+
+    Args:
+        atom_names: Atom names for all atoms in the chain.
+        elements: Element symbols for all atoms.
+        res_names: Residue names per atom.
+        res_ids: Residue IDs per atom.
+        chem_types: Chemical types per residue (optional).
+        ccd_path: Path to CCD mirror directory.
+
+    Returns:
+        WL hash string for the chain entity at atomic level.
+    """
+    _check_networkx()
+
+    if not atom_names:
+        return ""
+
+    from gemmi_extra_id.complete.atom_hash import compute_chain_atom_hash
+
+    return compute_chain_atom_hash(
+        atom_names=atom_names,
+        elements=elements,
+        res_names=res_names,
+        res_ids=res_ids,
+        chem_types=chem_types,
+        ccd_path=ccd_path,
+    )
+
+
 def find_pn_units(
     chain_ids: Sequence[str],
     is_polymer: Mapping[str, bool],
@@ -306,7 +347,7 @@ class EntityAssigner:
         residue_names: Mapping[ResKey, str],
         intra_bonds: Sequence[tuple[ResKey, ResKey]],
     ) -> int:
-        """Assign chain entity ID.
+        """Assign chain entity ID using residue-level hashing.
 
         Args:
             residues: Ordered list of residue keys in the chain.
@@ -317,6 +358,40 @@ class EntityAssigner:
             Chain entity ID (0-indexed integer).
         """
         hash_value = compute_chain_entity_hash(residues, residue_names, intra_bonds)
+        return self.chain_entity_mapper.get_or_create(hash_value)
+
+    def assign_chain_entity_atomic(
+        self,
+        atom_names: Sequence[str],
+        elements: Sequence[str],
+        res_names: Sequence[str],
+        res_ids: Sequence[int],
+        chem_types: Sequence[str] | None = None,
+        ccd_path: str = "",
+    ) -> int:
+        """Assign chain entity ID using atomic-level hashing.
+
+        Uses CCD bond information for more accurate entity matching.
+
+        Args:
+            atom_names: Atom names for all atoms in the chain.
+            elements: Element symbols for all atoms.
+            res_names: Residue names per atom.
+            res_ids: Residue IDs per atom.
+            chem_types: Chemical types per residue (optional).
+            ccd_path: Path to CCD mirror directory.
+
+        Returns:
+            Chain entity ID (0-indexed integer).
+        """
+        hash_value = compute_chain_atom_entity_hash(
+            atom_names=atom_names,
+            elements=elements,
+            res_names=res_names,
+            res_ids=res_ids,
+            chem_types=chem_types,
+            ccd_path=ccd_path,
+        )
         return self.chain_entity_mapper.get_or_create(hash_value)
 
     def assign_pn_unit_entity(
@@ -374,6 +449,7 @@ class EntityAssigner:
 
 __all__ = [
     "compute_chain_entity_hash",
+    "compute_chain_atom_entity_hash",
     "compute_pn_unit_entity_hash",
     "compute_molecule_entity_hash",
     "find_pn_units",

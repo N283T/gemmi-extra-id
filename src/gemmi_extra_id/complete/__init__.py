@@ -10,6 +10,7 @@ unlike the default loose mode which uses a faster approximation.
 
 from __future__ import annotations
 
+import os
 from collections import OrderedDict
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -33,6 +34,85 @@ from gemmi_extra_id.mmcif import AssignmentResult, ChainInfo
 
 if TYPE_CHECKING:
     from collections.abc import Set as AbstractSet
+
+
+def _get_atoms_from_atom_site(
+    block: gemmi.cif.Block,
+    chain_id: str,
+) -> tuple[list[str], list[str], list[str], list[int], list[str]]:
+    """Get atomic data from _atom_site for a chain.
+
+    Returns:
+        Tuple of (atom_names, elements, res_names, res_ids, chem_types).
+        chem_types is currently empty (not available in atom_site).
+    """
+    atom_names: list[str] = []
+    elements: list[str] = []
+    res_names: list[str] = []
+    res_ids: list[int] = []
+    chem_types: list[str] = []
+
+    label_col = block.find_loop("_atom_site.label_asym_id")
+    if not label_col:
+        return atom_names, elements, res_names, res_ids, chem_types
+
+    loop = label_col.get_loop()
+    if not loop:
+        return atom_names, elements, res_names, res_ids, chem_types
+
+    tags = list(loop.tags)
+
+    def get_idx(tag: str) -> int | None:
+        return tags.index(tag) if tag in tags else None
+
+    asym_idx = get_idx("_atom_site.label_asym_id")
+    atom_idx = get_idx("_atom_site.label_atom_id")
+    elem_idx = get_idx("_atom_site.type_symbol")
+    comp_idx = get_idx("_atom_site.label_comp_id")
+    seq_idx = get_idx("_atom_site.label_seq_id")
+
+    if asym_idx is None or atom_idx is None:
+        return atom_names, elements, res_names, res_ids, chem_types
+
+    # Track current residue number
+    current_res_num = 0
+    prev_seq_id: str | None = None
+
+    for row_idx in range(loop.length()):
+        if loop[row_idx, asym_idx] != chain_id:
+            continue
+
+        atom_name = loop[row_idx, atom_idx]
+        element = loop[row_idx, elem_idx] if elem_idx is not None else ""
+        res_name = loop[row_idx, comp_idx] if comp_idx is not None else ""
+
+        # Handle sequence ID for residue numbering
+        seq_id = loop[row_idx, seq_idx] if seq_idx is not None else "."
+        if seq_id in (".", "?", ""):
+            # For non-polymer (water, ligands), increment on each residue change
+            # We'll track by position - each new atom with same res_name is same residue
+            # Actually for simplicity, we increment res_num when res_name changes
+            # or when seq_id is different
+            pass
+
+        # Assign residue ID (use seq_id if numeric, otherwise track internally)
+        try:
+            res_id = int(seq_id)
+        except ValueError:
+            # Non-numeric seq_id: use incremental numbering
+            if seq_id != prev_seq_id:
+                current_res_num += 1
+            res_id = current_res_num
+
+        prev_seq_id = seq_id
+
+        atom_names.append(atom_name)
+        elements.append(element)
+        res_names.append(res_name)
+        res_ids.append(res_id)
+        chem_types.append("")  # Chem type not in atom_site
+
+    return atom_names, elements, res_names, res_ids, chem_types
 
 
 def _get_residues_from_atom_site(
@@ -127,13 +207,14 @@ def assign_extended_ids_complete(
     input_path: str | Path,
     output_path: str | Path | None = None,
     covalent_types: AbstractSet[str] | None = None,
+    ccd_path: str = "",
 ) -> AssignmentResult:
     """Assign extended IDs using AtomWorks-compatible algorithm.
 
     This function implements the complete entity assignment algorithm
     that matches AtomWorks output exactly. It includes:
     - Inferred polymer bonds from coordinates
-    - Weisfeiler-Lehman graph hashing at residue level
+    - Weisfeiler-Lehman graph hashing at residue level (or atomic level with CCD)
     - Inter-level bond hashing
 
     Args:
@@ -141,6 +222,9 @@ def assign_extended_ids_complete(
         output_path: Path to output mmCIF file. If None, no file is written.
         covalent_types: Set of conn_type_id values to treat as covalent bonds.
             Defaults to {"covale", "disulf"}.
+        ccd_path: Path to CCD mirror directory. If provided, uses atomic-level
+            hashing with CCD bond information for more accurate entity matching.
+            Can also be set via CCD_MIRROR_PATH environment variable.
 
     Returns:
         AssignmentResult containing ChainInfo for each chain.
@@ -188,6 +272,10 @@ def assign_extended_ids_complete(
     # Initialize entity assigner
     assigner = EntityAssigner()
 
+    # Determine CCD path (parameter takes precedence over environment variable)
+    effective_ccd_path = ccd_path or os.environ.get("CCD_MIRROR_PATH", "")
+    use_atomic_hash = bool(effective_ccd_path)
+
     # Build auth_asym_id mapping once (O(m) total, not O(n*m))
     auth_asym_mapping: dict[str, str] = {}
     label_col = block.find_loop("_atom_site.label_asym_id")
@@ -211,35 +299,59 @@ def assign_extended_ids_complete(
         meta = chain_metadata[chain_id]
         entity_id = meta.entity_id
 
-        # Get residues for this chain
-        if entity_id in entity_sequences and entity_sequences[entity_id]:
-            residues_with_names = entity_sequences[entity_id]
+        if use_atomic_hash:
+            # Use atomic-level hashing with CCD bond information
+            atom_names, elements, res_names, res_ids, chem_types = _get_atoms_from_atom_site(
+                block, chain_id
+            )
+
+            if not atom_names:
+                # Empty chain
+                chain_entities[chain_id] = assigner.assign_chain_entity_atomic(
+                    [], [], [], [], None, effective_ccd_path
+                )
+            else:
+                chain_entities[chain_id] = assigner.assign_chain_entity_atomic(
+                    atom_names=atom_names,
+                    elements=elements,
+                    res_names=res_names,
+                    res_ids=res_ids,
+                    chem_types=chem_types if chem_types else None,
+                    ccd_path=effective_ccd_path,
+                )
         else:
-            # Fallback to atom_site (pass entity_type for water handling)
-            residues_with_names = _get_residues_from_atom_site(block, chain_id, meta.entity_type)
+            # Use residue-level hashing (original behavior)
+            # Get residues for this chain
+            if entity_id in entity_sequences and entity_sequences[entity_id]:
+                residues_with_names = entity_sequences[entity_id]
+            else:
+                # Fallback to atom_site (pass entity_type for water handling)
+                residues_with_names = _get_residues_from_atom_site(
+                    block, chain_id, meta.entity_type
+                )
 
-        if not residues_with_names:
-            # Empty chain
-            chain_entities[chain_id] = assigner.assign_chain_entity([], {}, [])
-            continue
+            if not residues_with_names:
+                # Empty chain
+                chain_entities[chain_id] = assigner.assign_chain_entity([], {}, [])
+                continue
 
-        # Build residue list and names mapping
-        residues = [r[0] for r in residues_with_names]
-        residue_names = {r[0]: r[1] for r in residues_with_names}
+            # Build residue list and names mapping
+            residues = [r[0] for r in residues_with_names]
+            residue_names = {r[0]: r[1] for r in residues_with_names}
 
-        # Infer polymer bonds for this chain
-        polymer_bonds = get_inferred_polymer_bonds(residues)
+            # Infer polymer bonds for this chain
+            polymer_bonds = get_inferred_polymer_bonds(residues)
 
-        # Get intra-chain struct_conn bonds (disulfide, etc.) for this chain
-        struct_conn_bonds = intra_chain_struct_conn.get(chain_id, [])
+            # Get intra-chain struct_conn bonds (disulfide, etc.) for this chain
+            struct_conn_bonds = intra_chain_struct_conn.get(chain_id, [])
 
-        # Combine polymer bonds and struct_conn bonds
-        intra_bonds = polymer_bonds + struct_conn_bonds
+            # Combine polymer bonds and struct_conn bonds
+            intra_bonds = polymer_bonds + struct_conn_bonds
 
-        # Compute chain entity
-        chain_entities[chain_id] = assigner.assign_chain_entity(
-            residues, residue_names, intra_bonds
-        )
+            # Compute chain entity
+            chain_entities[chain_id] = assigner.assign_chain_entity(
+                residues, residue_names, intra_bonds
+            )
 
     # Find PN units
     is_polymer = {cid: chain_metadata[cid].is_polymer for cid in chain_ids}
