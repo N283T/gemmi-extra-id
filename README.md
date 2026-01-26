@@ -1,154 +1,144 @@
 # gemmi-extra-id
 
-Assign molecule_id to mmCIF files based on covalent connectivity.
+[![CI](https://github.com/N283T/gemmi-extra-id/actions/workflows/ci.yml/badge.svg)](https://github.com/N283T/gemmi-extra-id/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This is a [Gemmi](https://gemmi.readthedocs.io/)-based tool that identifies connected components of chains using covalent bond information from `_struct_conn` and writes the grouping back to the mmCIF file.
+Assign `molecule_id` to mmCIF files based on covalent bond connectivity.
+
+## What is molecule_id?
+
+In mmCIF files, chains (identified by `label_asym_id`) can be covalently linked together. `molecule_id` groups these connected chains into logical molecules.
+
+**Example:** A protein-ligand complex where chain A (protein) and chain B (covalently attached ligand) would share the same `molecule_id`, while chain C (a separate small molecule) would have a different `molecule_id`.
+
+```
+Chain A (protein) ─── covale ─── Chain B (ligand)  →  molecule_id = 0
+Chain C (separate molecule)                        →  molecule_id = 1
+```
 
 ## Installation
 
-### Library only
-
 ```bash
+# Library only
 pip install gemmi-extra-id
-```
 
-Or with uv:
-
-```bash
-uv add gemmi-extra-id
-```
-
-### With CLI
-
-```bash
+# With CLI
 pip install gemmi-extra-id[cli]
 ```
 
-Or with uv:
-
-```bash
-uv add gemmi-extra-id[cli]
-```
-
-## Usage
+## Quick Start
 
 ### Command Line
 
-> **Note:** CLI requires installation with `[cli]` extra.
-
 ```bash
-# Assign molecule_id to an mmCIF file
+# Basic usage - adds molecule_id to CIF
 gemmi-extra-id assign input.cif output.cif
 
-# Use default output name (input_molid.cif)
-gemmi-extra-id assign input.cif
-
-# Output as JSON
-gemmi-extra-id assign input.cif -f json output.json
-
-# Output to stdout (for piping)
+# Output as JSON mapping
 gemmi-extra-id assign input.cif -f json -
-
-# Specify custom covalent bond types
-gemmi-extra-id assign input.cif --conn-types covale,disulf,metalc
+# {"A": 0, "B": 0, "C": 1}
 ```
-
-### Swap Mode
-
-Use `--swap` to replace `auth_asym_id` with `molecule_id`. This is useful for applications that only read `auth_asym_id`:
-
-```bash
-# Replace auth_asym_id with molecule_id
-gemmi-extra-id assign input.cif output.cif --swap molecule_id
-```
-
-The original `auth_asym_id` values are preserved in `_atom_site.orig_auth_asym_id`.
 
 ### Python API
 
 ```python
 from gemmi_extra_id import assign_molecule_id
 
-# Assign and write to file
 mapping = assign_molecule_id("input.cif", "output.cif")
 print(mapping)
-# OrderedDict([('A', 0), ('B', 0), ('C', 1), ...])
-
-# Get mapping without writing
-mapping = assign_molecule_id("input.cif")
-
-# Custom covalent types
-mapping = assign_molecule_id("input.cif", "output.cif", covalent_types={"covale", "disulf"})
+# OrderedDict([('A', 0), ('B', 0), ('C', 1)])
 ```
 
-### Swap API
+## Output Format
 
-```python
-from gemmi_extra_id import swap_auth_asym_id
+The tool adds two elements to the mmCIF file:
 
-# Swap auth_asym_id with molecule_id
-mapping = swap_auth_asym_id("input.cif", "output.cif")
+1. **`_atom_site.molecule_id`** - Component ID for each atom
+2. **`_molecule_id_map`** - Summary mapping table
 
-# Don't preserve original auth_asym_id
-mapping = swap_auth_asym_id("input.cif", "output.cif", preserve_original=False)
+```
+loop_
+_molecule_id_map.label_asym_id
+_molecule_id_map.auth_asym_id
+_molecule_id_map.molecule_id
+A A 0
+B B 0
+C C 1
 ```
 
-### Output Formatters
-
-```python
-from gemmi_extra_id import assign_molecule_id, to_json
-
-mapping = assign_molecule_id("input.cif")
-
-# Convert to JSON
-print(to_json(mapping))   # {"A": 0, "B": 0, "C": 1}
-```
-
-## Output
-
-gemmi-extra-id adds two elements to the output mmCIF:
-
-1. `_atom_site.molecule_id` column - component ID for each atom
-2. `_molecule_id_map` loop - mapping of `label_asym_id` to `molecule_id`
-
-## Covalent Bond Types
-
-By default, gemmi-extra-id uses only `covale` (covalent) bond types for molecule grouping. Disulfide bonds (`disulf`) are **not** considered as intermolecular connections.
-
-This means chains connected only by disulfide bonds will have different `molecule_id` values:
-
-```python
-# 1A0H: Chain A and B are connected by disulfide bond
-# But they are assigned different molecule_ids
-mapping = assign_molecule_id("1A0H.cif")
-assert mapping["A"] != mapping["B"]
-```
-
-To include disulfide bonds in molecule grouping, specify `--conn-types`:
+## CLI Options
 
 ```bash
-gemmi-extra-id assign input.cif --conn-types covale,disulf
+gemmi-extra-id assign [OPTIONS] INPUT_FILE [OUTPUT_FILE]
+
+Options:
+  -f, --format [cif|json]   Output format (default: cif)
+  -c, --conn-types TEXT     Bond types to consider (default: covale)
+  -s, --swap molecule_id    Replace auth_asym_id with molecule_id
+  -q, --quiet               Suppress status messages
 ```
 
-Or in Python:
+### Swap Mode
+
+Replace `auth_asym_id` with `molecule_id` for applications that only read `auth_asym_id`:
+
+```bash
+gemmi-extra-id assign input.cif output.cif --swap molecule_id
+```
+
+Original values are preserved in `_atom_site.orig_auth_asym_id`.
+
+## Bond Type Configuration
+
+By default, only `covale` (covalent) bonds are considered. Disulfide bonds (`disulf`) are excluded.
+
+```bash
+# Include disulfide bonds
+gemmi-extra-id assign input.cif output.cif --conn-types covale,disulf
+```
 
 ```python
 mapping = assign_molecule_id("input.cif", covalent_types={"covale", "disulf"})
 ```
 
+## API Reference
+
+### assign_molecule_id
+
+```python
+def assign_molecule_id(
+    input_path: str | Path,
+    output_path: str | Path | None = None,
+    covalent_types: set[str] | None = None,  # default: {"covale"}
+) -> OrderedDict[str, int]:
+    """Assign molecule_id based on covalent connectivity."""
+```
+
+### swap_auth_asym_id
+
+```python
+def swap_auth_asym_id(
+    input_path: str | Path,
+    output_path: str | Path,
+    preserve_original: bool = True,
+    covalent_types: set[str] | None = None,
+) -> OrderedDict[str, int]:
+    """Replace auth_asym_id with molecule_id."""
+```
+
 ## Development
 
 ```bash
-# Install with CLI and dev dependencies
-uv pip install -e ".[cli]" --group dev
+# Clone and install
+git clone https://github.com/N283T/gemmi-extra-id.git
+cd gemmi-extra-id
+uv sync --group dev
 
 # Run tests
 uv run pytest
 
-# Run tests on multiple Python versions
-uv run nox
-
-# Lint and format
+# Lint
 uv run ruff check src tests
 uv run ruff format src tests
 ```
