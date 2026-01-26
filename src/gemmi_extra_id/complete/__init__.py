@@ -21,6 +21,7 @@ from gemmi_extra_id.complete.cif_utils import (
     ResKey,
     get_canonical_sequences,
     get_chain_info_complete,
+    get_intra_chain_bonds,
     get_struct_conn_bonds,
 )
 from gemmi_extra_id.complete.entities import (
@@ -167,6 +168,9 @@ def assign_extended_ids_complete(
     # Get inter-chain bonds
     inter_chain_bonds = _get_inter_chain_bonds(block, covalent_types_set)
 
+    # Get intra-chain bonds (disulfide, etc.) for chain_entity calculation
+    intra_chain_struct_conn = get_intra_chain_bonds(block, covalent_types_set)
+
     # Build entity_id -> canonical sequence mapping
     entity_sequences: dict[str, list[tuple[ResKey, str]]] = canonical_sequences
 
@@ -213,7 +217,13 @@ def assign_extended_ids_complete(
         residue_names = {r[0]: r[1] for r in residues_with_names}
 
         # Infer polymer bonds for this chain
-        intra_bonds = get_inferred_polymer_bonds(residues)
+        polymer_bonds = get_inferred_polymer_bonds(residues)
+
+        # Get intra-chain struct_conn bonds (disulfide, etc.) for this chain
+        struct_conn_bonds = intra_chain_struct_conn.get(chain_id, [])
+
+        # Combine polymer bonds and struct_conn bonds
+        intra_bonds = polymer_bonds + struct_conn_bonds
 
         # Compute chain entity
         chain_entities[chain_id] = assigner.assign_chain_entity(

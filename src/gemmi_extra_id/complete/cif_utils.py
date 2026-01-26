@@ -424,6 +424,70 @@ def get_struct_conn_bonds(
     return result
 
 
+def get_intra_chain_bonds(
+    block: gemmi.cif.Block,
+    bond_types: AbstractSet[str] | None = None,
+) -> dict[str, list[tuple[ResKey, ResKey]]]:
+    """Get intra-chain bonds from _struct_conn.
+
+    Extracts bonds where both partners are in the same chain.
+    This is used to add disulfide bonds and other intra-chain
+    covalent bonds to the chain_entity graph.
+
+    Args:
+        block: mmCIF data block.
+        bond_types: Set of conn_type_id values to include.
+            Defaults to {"disulf", "covale"} (disulfide and covalent bonds).
+
+    Returns:
+        Dict mapping chain_id to list of (ResKey, ResKey) bonds within that chain.
+        Each bond is represented as a tuple of two ResKeys. Bond direction is not
+        significant (bonds are treated as undirected).
+
+    Example:
+        >>> intra_bonds = get_intra_chain_bonds(block)
+        >>> intra_bonds["A"]  # Intra-chain bonds in chain A
+        [(("22", "."), ("87", "."))]  # e.g., disulfide between CYS 22 and CYS 87
+    """
+    if bond_types is None:
+        bond_types = frozenset({"disulf", "covale"})
+    else:
+        bond_types = frozenset(t.lower() for t in bond_types)
+
+    # Get all atom-level bonds matching the bond types
+    atom_bonds = get_struct_conn_bonds(block, bond_types)
+
+    # Filter to intra-chain bonds only and convert to ResKey pairs
+    result: dict[str, list[tuple[ResKey, ResKey]]] = {}
+    seen: dict[str, set[tuple[ResKey, ResKey]]] = {}
+
+    for bond in atom_bonds:
+        # Only include bonds within the same chain
+        if bond.chain1 != bond.chain2:
+            continue
+
+        chain_id = bond.chain1
+        res_key1: ResKey = (bond.seq1, bond.ins1)
+        res_key2: ResKey = (bond.seq2, bond.ins2)
+
+        # Skip if same residue (self-loop)
+        if res_key1 == res_key2:
+            continue
+
+        # Normalize bond order for deduplication
+        bond_pair = (min(res_key1, res_key2), max(res_key1, res_key2))
+
+        if chain_id not in seen:
+            seen[chain_id] = set()
+            result[chain_id] = []
+
+        if bond_pair not in seen[chain_id]:
+            seen[chain_id].add(bond_pair)
+            result[chain_id].append((res_key1, res_key2))
+
+    return result
+
+
 __all__ = [
     "ResKey",
     "ChainMetadata",
@@ -434,4 +498,5 @@ __all__ = [
     "get_struct_asym_mapping",
     "get_chain_info_complete",
     "get_struct_conn_bonds",
+    "get_intra_chain_bonds",
 ]
