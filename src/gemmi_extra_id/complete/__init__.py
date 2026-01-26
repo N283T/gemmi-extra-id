@@ -38,11 +38,15 @@ if TYPE_CHECKING:
 def _get_residues_from_atom_site(
     block: gemmi.cif.Block,
     chain_id: str,
+    entity_type: str = "",
 ) -> list[tuple[ResKey, str]]:
     """Get residues from _atom_site for a chain.
 
     Fallback when canonical sequence is not available.
     Returns list of (ResKey, mon_id) tuples.
+
+    For water chains (entity_type="water"), uses auth_seq_id to distinguish
+    individual water molecules, since all waters have label_seq_id=".".
     """
     result: list[tuple[ResKey, str]] = []
     seen: set[ResKey] = set()
@@ -63,18 +67,28 @@ def _get_residues_from_atom_site(
 
     asym_idx = get_idx("_atom_site.label_asym_id")
     seq_idx = get_idx("_atom_site.label_seq_id")
+    auth_seq_idx = get_idx("_atom_site.auth_seq_id")
     ins_idx = get_idx("_atom_site.pdbx_PDB_ins_code")
     comp_idx = get_idx("_atom_site.label_comp_id")
 
     if asym_idx is None or seq_idx is None or comp_idx is None:
         return result
 
+    # For water chains, use auth_seq_id to distinguish molecules
+    is_water = entity_type.lower() == "water"
+    use_auth_seq = is_water and auth_seq_idx is not None
+
     for row_idx in range(loop.length()):
         asym_id = loop[row_idx, asym_idx]
         if asym_id != chain_id:
             continue
 
-        seq_id = loop[row_idx, seq_idx]
+        # For water, use auth_seq_id; otherwise use label_seq_id
+        if use_auth_seq:
+            seq_id = loop[row_idx, auth_seq_idx]
+        else:
+            seq_id = loop[row_idx, seq_idx]
+
         ins_code = loop[row_idx, ins_idx] if ins_idx is not None else "."
         comp_id = loop[row_idx, comp_idx]
 
@@ -204,8 +218,8 @@ def assign_extended_ids_complete(
         if entity_id in entity_sequences and entity_sequences[entity_id]:
             residues_with_names = entity_sequences[entity_id]
         else:
-            # Fallback to atom_site
-            residues_with_names = _get_residues_from_atom_site(block, chain_id)
+            # Fallback to atom_site (pass entity_type for water handling)
+            residues_with_names = _get_residues_from_atom_site(block, chain_id, meta.entity_type)
 
         if not residues_with_names:
             # Empty chain
