@@ -90,7 +90,7 @@ def hash_graph(
 
 
 def generate_inter_level_bond_hash(
-    bonds: Sequence[tuple[str, str, str, str, str, str, str, str]],
+    bonds: Sequence[tuple[str, ...]] | Sequence[tuple[str, str, str, str, str, str]],
 ) -> str:
     """Generate hash for inter-level bonds.
 
@@ -98,8 +98,11 @@ def generate_inter_level_bond_hash(
     to distinguish entities that have the same graph structure but
     different bond connectivity patterns.
 
-    Each bond tuple should contain:
-    (entity1, res_id1, res_name1, atom_name1, entity2, res_id2, res_name2, atom_name2)
+    Supports two tuple formats:
+    - 6-tuple: (res_id1, res_name1, atom_name1, res_id2, res_name2, atom_name2)
+      Used for chain entity level (no lower_level_entity)
+    - 8-tuple: (entity1, res_id1, res_name1, atom_name1, entity2, res_id2, res_name2, atom_name2)
+      Used for pn_unit/molecule levels (with lower_level_entity)
 
     Args:
         bonds: Sequence of bond tuples with atomic information.
@@ -108,22 +111,35 @@ def generate_inter_level_bond_hash(
         Hash string representing the bond pattern.
 
     Example:
-        >>> bonds = [
-        ...     ("1", "10", "CYS", "SG", "2", "20", "CYS", "SG"),  # disulfide
-        ... ]
+        >>> # 6-tuple format (chain entity level)
+        >>> bonds = [("10", "CYS", "SG", "20", "CYS", "SG")]
+        >>> generate_inter_level_bond_hash(bonds)
+        '<hash_string>'
+
+        >>> # 8-tuple format (pn_unit/molecule level)
+        >>> bonds = [("1", "10", "CYS", "SG", "2", "20", "CYS", "SG")]
         >>> generate_inter_level_bond_hash(bonds)
         '<hash_string>'
     """
     if not bonds:
         return ""
 
+    # Determine tuple format from first bond
+    bond_len = len(bonds[0])
+    if bond_len == 6:
+        half_len = 3
+    elif bond_len == 8:
+        half_len = 4
+    else:
+        raise ValueError(f"Expected 6 or 8 element bond tuple, got {bond_len}")
+
     # Sort bond tuples for determinism
     # Each bond is normalized so smaller tuple comes first
     normalized_bonds = []
     for bond in bonds:
         # Split into two halves
-        half1 = bond[:4]
-        half2 = bond[4:]
+        half1 = bond[:half_len]
+        half2 = bond[half_len:]
         # Sort so smaller tuple comes first
         if half1 <= half2:
             normalized_bonds.append((half1, half2))

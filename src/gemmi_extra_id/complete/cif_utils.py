@@ -6,13 +6,36 @@ AtomWorks-compatible entity assignment.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import gemmi
 
 if TYPE_CHECKING:
     from collections.abc import Set as AbstractSet
+
+
+# Mapping of chem_comp types to their polymerization atoms (atom1, atom2)
+# where atom1 in residue N connects to atom2 in residue N+1.
+# These bonds are standard polymer backbone bonds and should not be included
+# in the inter-level bond hash. From AtomWorks CHEM_TYPE_POLYMERIZATION_ATOMS.
+CHEM_TYPE_POLYMERIZATION_ATOMS: dict[str, tuple[str, str]] = {
+    # Peptide bonds (C of residue N connects to N of residue N+1)
+    "PEPTIDE LINKING": ("C", "N"),
+    "L-PEPTIDE LINKING": ("C", "N"),
+    "D-PEPTIDE LINKING": ("C", "N"),
+    "L-BETA-PEPTIDE, C-GAMMA LINKING": ("CG", "N"),
+    "D-BETA-PEPTIDE, C-GAMMA LINKING": ("CG", "N"),
+    "L-GAMMA-PEPTIDE, C-DELTA LINKING": ("CD", "N"),
+    "D-GAMMA-PEPTIDE, C-DELTA LINKING": ("CD", "N"),
+    # Phosphodiester bonds (O3' of residue N connects to P of residue N+1)
+    "DNA LINKING": ("O3'", "P"),
+    "L-DNA LINKING": ("O3'", "P"),
+    "RNA LINKING": ("O3'", "P"),
+    "L-RNA LINKING": ("O3'", "P"),
+}
 
 # Type alias for residue key (seq_id, ins_code)
 ResKey = tuple[str, str]
@@ -488,10 +511,285 @@ def get_intra_chain_bonds(
     return result
 
 
+# Type alias for atom-level bond tuple (res_id, res_name, atom_name) x 2
+AtomBondTuple = tuple[str, str, str, str, str, str]
+
+
+@lru_cache(maxsize=1024)
+def _get_chem_type_from_ccd(comp_id: str, ccd_path: str) -> str | None:
+    """Get chemical component type from CCD.
+
+    Args:
+        comp_id: Component ID (e.g., "ALA", "DAL").
+        ccd_path: Path to CCD mirror directory.
+
+    Returns:
+        Chemical component type (e.g., "L-PEPTIDE LINKING") or None if not found.
+    """
+    if not ccd_path:
+        return None
+
+    # Try different path structures for CCD
+    # Structure 1: {ccd_path}/{first_letter_upper}/{comp_id}/{comp_id}.cif
+    cif_file = os.path.join(ccd_path, comp_id[0].upper(), comp_id, f"{comp_id}.cif")
+
+    if not os.path.exists(cif_file):
+        # Structure 2: {ccd_path}/{first_letter_lower}/{comp_id}.cif
+        cif_file = os.path.join(ccd_path, comp_id[0].lower(), f"{comp_id}.cif")
+
+    if not os.path.exists(cif_file):
+        return None
+
+    try:
+        doc = gemmi.cif.read(cif_file)
+        block = doc[0]
+        chem_type = block.find_value("_chem_comp.type")
+        if chem_type and chem_type not in ("?", "."):
+            # Normalize: remove quotes and convert to uppercase
+            return chem_type.strip('"').strip("'").upper()
+    except Exception:
+        pass
+
+    return None
+
+
+def _is_polymer_backbone_bond(
+    comp1: str,
+    atom1: str,
+    comp2: str,
+    atom2: str,
+    ccd_path: str,
+) -> bool:
+    """Check if a bond is a standard polymer backbone bond.
+
+    Polymer backbone bonds (peptide bonds, phosphodiester bonds) are inferred
+    from the polymer structure and should not be included in the inter-level
+    bond hash.
+
+    Args:
+        comp1: Component ID of first residue.
+        atom1: Atom name in first residue.
+        comp2: Component ID of second residue.
+        atom2: Atom name in second residue.
+        ccd_path: Path to CCD mirror directory.
+
+    Returns:
+        True if this is a polymer backbone bond, False otherwise.
+    """
+    if not ccd_path:
+        return False
+
+    chem_type1 = _get_chem_type_from_ccd(comp1, ccd_path)
+    chem_type2 = _get_chem_type_from_ccd(comp2, ccd_path)
+
+    if not chem_type1 or not chem_type2:
+        return False
+
+    # Get polymerization atoms for each residue
+    poly_atoms1 = CHEM_TYPE_POLYMERIZATION_ATOMS.get(chem_type1)
+    poly_atoms2 = CHEM_TYPE_POLYMERIZATION_ATOMS.get(chem_type2)
+
+    if not poly_atoms1 or not poly_atoms2:
+        return False
+
+    # Check if this is a polymer backbone bond:
+    # - atom1 is the "exit" atom of comp1 (poly_atoms1[0]) and
+    #   atom2 is the "entry" atom of comp2 (poly_atoms1[1])
+    # - OR the reverse direction
+    exit_atom1, entry_atom1 = poly_atoms1
+    exit_atom2, entry_atom2 = poly_atoms2
+
+    # Check forward direction: comp1 exit -> comp2 entry
+    if atom1 == exit_atom1 and atom2 == entry_atom2:
+        return True
+
+    # Check reverse direction: comp2 exit -> comp1 entry
+    if atom2 == exit_atom2 and atom1 == entry_atom1:
+        return True
+
+    return False
+
+
+def get_intra_chain_atom_bonds(
+    block: gemmi.cif.Block,
+    bond_types: AbstractSet[str] | None = None,
+    ccd_path: str = "",
+    exclude_polymer_backbone: bool = True,
+) -> dict[str, list[AtomBondTuple]]:
+    """Get intra-chain atom-level bonds from _struct_conn.
+
+    Returns bonds with full atomic information (res_id, res_name, atom_name)
+    for use in inter-level bond hash computation. This matches the format
+    used by AtomWorks's generate_inter_level_bond_hash().
+
+    By default, excludes polymer backbone bonds (peptide bonds, phosphodiester
+    bonds) as these are inferred from the polymer structure by AtomWorks.
+
+    Args:
+        block: mmCIF data block.
+        bond_types: Set of conn_type_id values to include.
+            Defaults to {"covale"} (covalent bonds only, like AtomWorks).
+        ccd_path: Path to CCD mirror directory for chem_type lookup.
+            Required if exclude_polymer_backbone is True.
+        exclude_polymer_backbone: If True, exclude standard polymer backbone
+            bonds (peptide bonds, phosphodiester bonds) from the result.
+            Defaults to True for AtomWorks compatibility.
+
+    Returns:
+        Dict mapping chain_id to list of bond tuples. Each tuple contains:
+        (res_id1, res_name1, atom_name1, res_id2, res_name2, atom_name2)
+
+    Example:
+        >>> atom_bonds = get_intra_chain_atom_bonds(block, ccd_path="/path/to/ccd")
+        >>> atom_bonds["A"]
+        [("82", "GLU", "OE2", "165", "TYR", "CZ"), ...]
+    """
+    if bond_types is None:
+        bond_types = frozenset({"covale"})
+    else:
+        bond_types = frozenset(t.lower() for t in bond_types)
+
+    # Get all atom-level bonds matching the bond types
+    atom_bonds = get_struct_conn_bonds(block, bond_types)
+
+    # Filter to intra-chain bonds and convert to AtomBondTuple
+    result: dict[str, list[AtomBondTuple]] = {}
+    seen: dict[str, set[AtomBondTuple]] = {}
+
+    for bond in atom_bonds:
+        # Only include bonds within the same chain
+        if bond.chain1 != bond.chain2:
+            continue
+
+        # Skip polymer backbone bonds if requested
+        if exclude_polymer_backbone and ccd_path:
+            if _is_polymer_backbone_bond(bond.comp1, bond.atom1, bond.comp2, bond.atom2, ccd_path):
+                continue
+
+        chain_id = bond.chain1
+
+        # Create atom-level bond tuple
+        bond_tuple: AtomBondTuple = (
+            bond.seq1,
+            bond.comp1,
+            bond.atom1,
+            bond.seq2,
+            bond.comp2,
+            bond.atom2,
+        )
+
+        # Normalize bond order for deduplication (smaller half first)
+        half1 = (bond.seq1, bond.comp1, bond.atom1)
+        half2 = (bond.seq2, bond.comp2, bond.atom2)
+        if half1 > half2:
+            bond_tuple = (
+                bond.seq2,
+                bond.comp2,
+                bond.atom2,
+                bond.seq1,
+                bond.comp1,
+                bond.atom1,
+            )
+
+        if chain_id not in seen:
+            seen[chain_id] = set()
+            result[chain_id] = []
+
+        if bond_tuple not in seen[chain_id]:
+            seen[chain_id].add(bond_tuple)
+            result[chain_id].append(bond_tuple)
+
+    return result
+
+
+# 8-tuple: (pn_entity1, res_id1, res_name1, atom_name1, pn_entity2, res_id2, res_name2, atom_name2)
+InterChainAtomBondTuple = tuple[str, str, str, str, str, str, str, str]
+
+
+def get_inter_chain_atom_bonds(
+    block: gemmi.cif.Block,
+    bond_types: AbstractSet[str] | None = None,
+    ccd_path: str = "",
+    exclude_polymer_backbone: bool = True,
+) -> list[tuple[str, str, AtomBondTuple]]:
+    """Get inter-chain atom-level bonds from _struct_conn.
+
+    Returns bonds with full atomic information including chain IDs for use in
+    molecule_entity inter-level bond hash computation.
+
+    Args:
+        block: mmCIF data block.
+        bond_types: Set of conn_type_id values to include.
+            Defaults to {"covale"} (covalent bonds only, like AtomWorks).
+        ccd_path: Path to CCD mirror directory for chem_type lookup.
+        exclude_polymer_backbone: If True, exclude standard polymer backbone
+            bonds. Defaults to True for AtomWorks compatibility.
+
+    Returns:
+        List of tuples: (chain1, chain2, (res_id1, res_name1, atom_name1,
+                                           res_id2, res_name2, atom_name2))
+
+    Example:
+        >>> inter_bonds = get_inter_chain_atom_bonds(block)
+        >>> inter_bonds
+        [("E", "I", ("8", "LYS", "NZ", "201", "8HB", "C1")), ...]
+    """
+    if bond_types is None:
+        bond_types = frozenset({"covale"})
+    else:
+        bond_types = frozenset(t.lower() for t in bond_types)
+
+    # Get all atom-level bonds matching the bond types
+    atom_bonds = get_struct_conn_bonds(block, bond_types)
+
+    # Filter to inter-chain bonds and convert to tuple format
+    result: list[tuple[str, str, AtomBondTuple]] = []
+    seen: set[tuple[str, str, AtomBondTuple]] = set()
+
+    for bond in atom_bonds:
+        # Only include bonds between different chains
+        if bond.chain1 == bond.chain2:
+            continue
+
+        # Skip polymer backbone bonds if requested
+        if exclude_polymer_backbone and ccd_path:
+            if _is_polymer_backbone_bond(bond.comp1, bond.atom1, bond.comp2, bond.atom2, ccd_path):
+                continue
+
+        # Create atom-level bond tuple (6-tuple)
+        bond_tuple: AtomBondTuple = (
+            bond.seq1,
+            bond.comp1,
+            bond.atom1,
+            bond.seq2,
+            bond.comp2,
+            bond.atom2,
+        )
+
+        # Normalize bond order for deduplication (smaller chain first)
+        if bond.chain1 < bond.chain2:
+            entry = (bond.chain1, bond.chain2, bond_tuple)
+        else:
+            # Swap chain order and bond tuple halves
+            entry = (
+                bond.chain2,
+                bond.chain1,
+                (bond.seq2, bond.comp2, bond.atom2, bond.seq1, bond.comp1, bond.atom1),
+            )
+
+        if entry not in seen:
+            seen.add(entry)
+            result.append(entry)
+
+    return result
+
+
 __all__ = [
     "ResKey",
     "ChainMetadata",
     "AtomBond",
+    "AtomBondTuple",
+    "InterChainAtomBondTuple",
     "get_canonical_sequences",
     "get_entity_info",
     "get_polymer_info",
@@ -499,4 +797,6 @@ __all__ = [
     "get_chain_info_complete",
     "get_struct_conn_bonds",
     "get_intra_chain_bonds",
+    "get_intra_chain_atom_bonds",
+    "get_inter_chain_atom_bonds",
 ]
