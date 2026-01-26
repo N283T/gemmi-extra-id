@@ -98,12 +98,14 @@ def _get_inter_chain_bonds(
     """Get inter-chain bonds (chain_id pairs) from struct_conn."""
     atom_bonds = get_struct_conn_bonds(block, covalent_types)
     result: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
 
     for bond in atom_bonds:
         if bond.chain1 != bond.chain2:
             # Normalize order for consistency
-            pair = tuple(sorted([bond.chain1, bond.chain2]))
-            if pair not in result:
+            pair: tuple[str, str] = (min(bond.chain1, bond.chain2), max(bond.chain1, bond.chain2))
+            if pair not in seen:
+                seen.add(pair)
                 result.append(pair)
 
     return result
@@ -171,10 +173,24 @@ def assign_extended_ids_complete(
     # Initialize entity assigner
     assigner = EntityAssigner()
 
+    # Build auth_asym_id mapping once (O(m) total, not O(n*m))
+    auth_asym_mapping: dict[str, str] = {}
+    label_col = block.find_loop("_atom_site.label_asym_id")
+    if label_col:
+        loop = label_col.get_loop()
+        if loop:
+            tags = list(loop.tags)
+            if "_atom_site.auth_asym_id" in tags:
+                label_idx = tags.index("_atom_site.label_asym_id")
+                auth_idx = tags.index("_atom_site.auth_asym_id")
+                for row_idx in range(loop.length()):
+                    label = loop[row_idx, label_idx]
+                    if label not in auth_asym_mapping:
+                        auth_asym_mapping[label] = loop[row_idx, auth_idx]
+
     # Process each chain to compute chain_entity
     chain_ids = list(chain_metadata.keys())
     chain_entities: dict[str, int] = {}
-    chain_residues: dict[str, list[tuple[ResKey, str]]] = {}
 
     for chain_id in chain_ids:
         meta = chain_metadata[chain_id]
@@ -186,8 +202,6 @@ def assign_extended_ids_complete(
         else:
             # Fallback to atom_site
             residues_with_names = _get_residues_from_atom_site(block, chain_id)
-
-        chain_residues[chain_id] = residues_with_names
 
         if not residues_with_names:
             # Empty chain
@@ -229,12 +243,14 @@ def assign_extended_ids_complete(
     # Find molecules (group connected PN units)
     # Inter-PN-unit bonds are inter-chain bonds where chains are in different PN units
     inter_pn_unit_bonds: list[tuple[str, str]] = []
+    seen_pn_bonds: set[tuple[str, str]] = set()
     for chain_a, chain_b in inter_chain_bonds:
         pn_a = pn_unit_mapping.get(chain_a)
         pn_b = pn_unit_mapping.get(chain_b)
         if pn_a and pn_b and pn_a != pn_b:
-            pair = tuple(sorted([pn_a, pn_b]))
-            if pair not in inter_pn_unit_bonds:
+            pair: tuple[str, str] = (min(pn_a, pn_b), max(pn_a, pn_b))
+            if pair not in seen_pn_bonds:
+                seen_pn_bonds.add(pair)
                 inter_pn_unit_bonds.append(pair)
 
     molecule_mapping = find_molecules(pn_unit_ids, inter_pn_unit_bonds)
@@ -268,20 +284,8 @@ def assign_extended_ids_complete(
         pn_unit_id = pn_unit_mapping[chain_id]
         mol_id = molecule_mapping[pn_unit_id]
 
-        # Get auth_asym_id from atom_site (fallback to chain_id)
-        auth_asym_id = chain_id  # Default
-        label_col = block.find_loop("_atom_site.label_asym_id")
-        if label_col:
-            loop = label_col.get_loop()
-            if loop:
-                tags = list(loop.tags)
-                if "_atom_site.auth_asym_id" in tags:
-                    label_idx = tags.index("_atom_site.label_asym_id")
-                    auth_idx = tags.index("_atom_site.auth_asym_id")
-                    for row_idx in range(loop.length()):
-                        if loop[row_idx, label_idx] == chain_id:
-                            auth_asym_id = loop[row_idx, auth_idx]
-                            break
+        # Get auth_asym_id from pre-built mapping (fallback to chain_id)
+        auth_asym_id = auth_asym_mapping.get(chain_id, chain_id)
 
         chain_info[chain_id] = ChainInfo(
             label_asym_id=chain_id,
