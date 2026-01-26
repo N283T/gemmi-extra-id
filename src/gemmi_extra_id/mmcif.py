@@ -326,6 +326,24 @@ def _get_entity_mapping(
     return result
 
 
+def _get_canonical_sequences(
+    block: gemmi.cif.Block,
+) -> dict[str, list[tuple[tuple[str, str], str]]]:
+    """Get canonical sequences from _entity_poly_seq.
+
+    Internal wrapper for backward compatibility with test scripts.
+
+    Args:
+        block: mmCIF data block.
+
+    Returns:
+        Dict mapping entity_id to list of ((seq_num, ins_code), mon_id) tuples.
+    """
+    from gemmi_extra_id.complete.cif_utils import get_canonical_sequences
+
+    return get_canonical_sequences(block)
+
+
 def _compute_extended_chain_info(
     chain_order: list[str],
     label_to_auth: dict[str, str],
