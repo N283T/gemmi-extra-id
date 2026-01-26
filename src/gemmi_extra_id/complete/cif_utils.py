@@ -60,16 +60,18 @@ class AtomBond:
     """Atom-level bond from struct_conn."""
 
     chain1: str
-    seq1: str
+    seq1: str  # label_seq_id
     ins1: str
     comp1: str
     atom1: str
     chain2: str
-    seq2: str
+    seq2: str  # label_seq_id
     ins2: str
     comp2: str
     atom2: str
     conn_type: str
+    auth_seq1: str = ""  # auth_seq_id (used for inter-level bond hash)
+    auth_seq2: str = ""  # auth_seq_id (used for inter-level bond hash)
 
 
 # CIF tags
@@ -90,11 +92,13 @@ _STRUCT_ASYM_ENTITY_ID = "_struct_asym.entity_id"
 _STRUCT_CONN_TYPE = "_struct_conn.conn_type_id"
 _STRUCT_CONN_P1_CHAIN = "_struct_conn.ptnr1_label_asym_id"
 _STRUCT_CONN_P1_SEQ = "_struct_conn.ptnr1_label_seq_id"
+_STRUCT_CONN_P1_AUTH_SEQ = "_struct_conn.ptnr1_auth_seq_id"
 _STRUCT_CONN_P1_INS = "_struct_conn.pdbx_ptnr1_PDB_ins_code"
 _STRUCT_CONN_P1_COMP = "_struct_conn.ptnr1_label_comp_id"
 _STRUCT_CONN_P1_ATOM = "_struct_conn.ptnr1_label_atom_id"
 _STRUCT_CONN_P2_CHAIN = "_struct_conn.ptnr2_label_asym_id"
 _STRUCT_CONN_P2_SEQ = "_struct_conn.ptnr2_label_seq_id"
+_STRUCT_CONN_P2_AUTH_SEQ = "_struct_conn.ptnr2_auth_seq_id"
 _STRUCT_CONN_P2_INS = "_struct_conn.pdbx_ptnr2_PDB_ins_code"
 _STRUCT_CONN_P2_COMP = "_struct_conn.ptnr2_label_comp_id"
 _STRUCT_CONN_P2_ATOM = "_struct_conn.ptnr2_label_atom_id"
@@ -391,11 +395,13 @@ def get_struct_conn_bonds(
     type_idx = get_idx(_STRUCT_CONN_TYPE)
     p1_chain_idx = get_idx(_STRUCT_CONN_P1_CHAIN)
     p1_seq_idx = get_idx(_STRUCT_CONN_P1_SEQ)
+    p1_auth_seq_idx = get_idx(_STRUCT_CONN_P1_AUTH_SEQ)
     p1_ins_idx = get_idx(_STRUCT_CONN_P1_INS)
     p1_comp_idx = get_idx(_STRUCT_CONN_P1_COMP)
     p1_atom_idx = get_idx(_STRUCT_CONN_P1_ATOM)
     p2_chain_idx = get_idx(_STRUCT_CONN_P2_CHAIN)
     p2_seq_idx = get_idx(_STRUCT_CONN_P2_SEQ)
+    p2_auth_seq_idx = get_idx(_STRUCT_CONN_P2_AUTH_SEQ)
     p2_ins_idx = get_idx(_STRUCT_CONN_P2_INS)
     p2_comp_idx = get_idx(_STRUCT_CONN_P2_COMP)
     p2_atom_idx = get_idx(_STRUCT_CONN_P2_ATOM)
@@ -413,6 +419,11 @@ def get_struct_conn_bonds(
         # Get partner 1 info
         chain1 = _normalize_cif_value(loop[row_idx, p1_chain_idx])
         seq1 = _normalize_cif_value(loop[row_idx, p1_seq_idx]) if p1_seq_idx is not None else "."
+        auth_seq1 = (
+            _normalize_cif_value(loop[row_idx, p1_auth_seq_idx])
+            if p1_auth_seq_idx is not None
+            else "."
+        )
         ins1 = _normalize_cif_value(loop[row_idx, p1_ins_idx]) if p1_ins_idx is not None else "."
         comp1 = _normalize_cif_value(loop[row_idx, p1_comp_idx]) if p1_comp_idx is not None else "."
         atom1 = _normalize_cif_value(loop[row_idx, p1_atom_idx]) if p1_atom_idx is not None else "."
@@ -420,6 +431,11 @@ def get_struct_conn_bonds(
         # Get partner 2 info
         chain2 = _normalize_cif_value(loop[row_idx, p2_chain_idx])
         seq2 = _normalize_cif_value(loop[row_idx, p2_seq_idx]) if p2_seq_idx is not None else "."
+        auth_seq2 = (
+            _normalize_cif_value(loop[row_idx, p2_auth_seq_idx])
+            if p2_auth_seq_idx is not None
+            else "."
+        )
         ins2 = _normalize_cif_value(loop[row_idx, p2_ins_idx]) if p2_ins_idx is not None else "."
         comp2 = _normalize_cif_value(loop[row_idx, p2_comp_idx]) if p2_comp_idx is not None else "."
         atom2 = _normalize_cif_value(loop[row_idx, p2_atom_idx]) if p2_atom_idx is not None else "."
@@ -441,6 +457,8 @@ def get_struct_conn_bonds(
                 comp2=comp2,
                 atom2=atom2,
                 conn_type=conn_type,
+                auth_seq1=auth_seq1,
+                auth_seq2=auth_seq2,
             )
         )
 
@@ -758,12 +776,13 @@ def get_inter_chain_atom_bonds(
         ):
             continue
 
-        # Create atom-level bond tuple (6-tuple)
+        # Create atom-level bond tuple (6-tuple) using auth_seq_id for AtomWorks compatibility
+        # AtomWorks uses res_id (auth_seq_id) in generate_inter_level_bond_hash
         bond_tuple: AtomBondTuple = (
-            bond.seq1,
+            bond.auth_seq1,
             bond.comp1,
             bond.atom1,
-            bond.seq2,
+            bond.auth_seq2,
             bond.comp2,
             bond.atom2,
         )
@@ -776,7 +795,7 @@ def get_inter_chain_atom_bonds(
             entry = (
                 bond.chain2,
                 bond.chain1,
-                (bond.seq2, bond.comp2, bond.atom2, bond.seq1, bond.comp1, bond.atom1),
+                (bond.auth_seq2, bond.comp2, bond.atom2, bond.auth_seq1, bond.comp1, bond.atom1),
             )
 
         if entry not in seen:
