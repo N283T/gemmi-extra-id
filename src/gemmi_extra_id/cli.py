@@ -20,18 +20,17 @@ from pathlib import Path
 from typing import Annotated
 
 from gemmi_extra_id import __version__
-from gemmi_extra_id.formatters import write_extended_output, write_output
+from gemmi_extra_id.formatters import write_output
 from gemmi_extra_id.graph import DEFAULT_COVALENT_TYPES
 from gemmi_extra_id.mmcif import (
     VALID_SWAP_TARGETS,
-    assign_extended_ids,
     assign_molecule_id,
     swap_auth_asym_id,
 )
 
 app = typer.Typer(
     name="gemmi-extra-id",
-    help="Assign extra IDs to mmCIF files based on covalent connectivity.",
+    help="Assign molecule_id to mmCIF files based on covalent connectivity.",
     no_args_is_help=True,
 )
 console = Console()
@@ -43,17 +42,6 @@ class OutputFormat(str, Enum):
 
     cif = "cif"
     json = "json"
-    csv = "csv"
-    tsv = "tsv"
-    table = "table"
-    tree = "tree"
-
-
-class Mode(str, Enum):
-    """Entity assignment mode options."""
-
-    loose = "loose"
-    complete = "complete"
 
 
 def version_callback(value: bool) -> None:
@@ -107,14 +95,6 @@ def assign(
             help="Suppress status messages (useful with stdout output)",
         ),
     ] = False,
-    extended: Annotated[
-        bool,
-        typer.Option(
-            "--extended",
-            "-e",
-            help="Include all IDs: chain_entity, pn_unit_id, pn_unit_entity, molecule_entity",
-        ),
-    ] = False,
     swap: Annotated[
         str | None,
         typer.Option(
@@ -126,59 +106,9 @@ def assign(
             ),
         ),
     ] = None,
-    hash_entities: Annotated[
-        bool,
-        typer.Option(
-            "--hash-entities",
-            "-H",
-            help="Use Weisfeiler-Lehman graph hashing for entity IDs (AtomWorks compatible). "
-            "Requires networkx: pip install gemmi-extra-id[hash]",
-        ),
-    ] = False,
-    mode: Annotated[
-        Mode,
-        typer.Option(
-            "--mode",
-            "-m",
-            help="Entity assignment mode: loose (fast, default) or complete "
-            "(AtomWorks compatible). Requires networkx: pip install gemmi-extra-id[complete]",
-        ),
-    ] = Mode.loose,
 ) -> None:
     """Assign molecule_id to an mmCIF file based on covalent connectivity."""
     covalent_types = {t.strip().lower() for t in conn_types.split(",") if t.strip()}
-
-    # Handle complete mode
-    if mode == Mode.complete:
-        try:
-            from gemmi_extra_id.complete import assign_extended_ids_complete
-        except ImportError:
-            err_console.print(
-                "[red]Error:[/red] Complete mode requires networkx. "
-                "Install with: pip install gemmi-extra-id[complete]"
-            )
-            raise typer.Exit(1) from None
-
-        try:
-            # Complete mode always uses extended output
-            result = assign_extended_ids_complete(input_file, None, covalent_types)
-            # TODO(Phase 2+): Handle result - write output, display stats
-            # For now, this is unreachable as stub raises NotImplementedError
-            raise typer.Exit(0)
-        except NotImplementedError as e:
-            err_console.print(f"[red]Error:[/red] {e}")
-            raise typer.Exit(1) from None
-        except ValueError as e:
-            err_console.print(f"[red]Error:[/red] {e}")
-            raise typer.Exit(1) from None
-
-    # Tree format requires extended mode (loose mode only from here)
-    if fmt == OutputFormat.tree:
-        extended = True
-
-    # --hash-entities implies extended mode
-    if hash_entities:
-        extended = True
 
     # Determine output path
     is_stdout = output_file == "-"
@@ -207,44 +137,23 @@ def assign(
 
     try:
         if swap is not None:
-            # Swap mode: replace auth_asym_id with specified ID
-            result = swap_auth_asym_id(
+            # Swap mode: replace auth_asym_id with molecule_id
+            mapping = swap_auth_asym_id(
                 input_file,
                 output_path,
-                swap_with=swap,
                 covalent_types=covalent_types,
             )
-            mapping = result.molecule_id_mapping
-        elif extended:
-            # Extended mode: include all IDs
-            if fmt == OutputFormat.cif:
-                result = assign_extended_ids(
-                    input_file,
-                    None if is_stdout else output_path,
-                    covalent_types,
-                    use_hash=hash_entities,
-                )
-                if is_stdout:
-                    err_console.print("[red]Error:[/red] CIF format cannot be written to stdout")
-                    raise typer.Exit(1)
-            else:
-                result = assign_extended_ids(
-                    input_file, None, covalent_types, use_hash=hash_entities
-                )
-                write_extended_output(result, output_path, fmt.value)
-            mapping = result.molecule_id_mapping
+        elif fmt == OutputFormat.cif:
+            # CIF output
+            if is_stdout:
+                err_console.print("[red]Error:[/red] CIF format cannot be written to stdout")
+                raise typer.Exit(1)
+            mapping = assign_molecule_id(input_file, output_path, covalent_types)
         else:
-            # Standard mode: molecule_id only
-            if fmt == OutputFormat.cif:
-                mapping = assign_molecule_id(
-                    input_file, None if is_stdout else output_path, covalent_types
-                )
-                if is_stdout:
-                    err_console.print("[red]Error:[/red] CIF format cannot be written to stdout")
-                    raise typer.Exit(1)
-            else:
-                mapping = assign_molecule_id(input_file, None, covalent_types)
-                write_output(mapping, output_path, fmt.value)
+            # JSON output
+            mapping = assign_molecule_id(input_file, None, covalent_types)
+            write_output(mapping, output_path, fmt.value)
+
     except ImportError as e:
         err_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from None
@@ -262,8 +171,6 @@ def assign(
         )
         if swap is not None:
             console.print(f"Swapped auth_asym_id with [cyan]{swap}[/cyan]")
-        if hash_entities:
-            console.print("Used [cyan]graph hashing[/cyan] for entity IDs")
 
 
 if __name__ == "__main__":
