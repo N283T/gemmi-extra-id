@@ -42,3 +42,4 @@ plans/
 results*.json
 test*.log
 test_output.txt
+.env
