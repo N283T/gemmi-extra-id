@@ -85,16 +85,14 @@ def load_ccd_component(code: str, ccd_path: str = DEFAULT_CCD_PATH) -> CCDCompon
         logger.warning(f"Failed to read CCD file {path}: {e}")
         return None
 
-    # Extract atoms
-    atom_loop = block.find_loop("_chem_comp_atom.atom_id")
-    element_loop = block.find_loop("_chem_comp_atom.type_symbol")
-
-    if not atom_loop or not element_loop:
+    # Extract atoms using get_mmcif_category (handles both loop and single-value)
+    atom_cat = block.get_mmcif_category("_chem_comp_atom.")
+    if not atom_cat or "atom_id" not in atom_cat or "type_symbol" not in atom_cat:
         logger.debug(f"No atom data in CCD {code}")
         return None
 
-    atoms = tuple(str(a) for a in atom_loop)
-    elements = tuple(str(e) for e in element_loop)
+    atoms = tuple(atom_cat["atom_id"])
+    elements = tuple(atom_cat["type_symbol"])
 
     # Extract bonds
     bond_atom1_loop = block.find_loop("_chem_comp_bond.atom_id_1")
