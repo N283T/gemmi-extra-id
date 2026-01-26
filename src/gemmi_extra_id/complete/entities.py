@@ -145,8 +145,7 @@ def compute_pn_unit_entity_hash(
     pn_unit_id: str,
     chain_entities: Mapping[str, int],
     inter_chain_bonds: Sequence[tuple[str, str]],
-    inter_level_bonds: Sequence[tuple[str, str, str, str, str, str, str, str]]
-    | None = None,
+    inter_level_bonds: Sequence[tuple[str, str, str, str, str, str, str, str]] | None = None,
 ) -> str:
     """Compute PN unit entity hash using WL graph hashing.
 
@@ -166,9 +165,9 @@ def compute_pn_unit_entity_hash(
     """
     _check_networkx()
 
-    chain_ids = pn_unit_id.split(",")
-    if not chain_ids:
+    if not pn_unit_id:
         return ""
+    chain_ids = pn_unit_id.split(",")
 
     chain_set = set(chain_ids)
     chain_to_idx = {c: i for i, c in enumerate(chain_ids)}
@@ -223,9 +222,12 @@ def find_molecules(
     graph.add_nodes_from(pn_unit_ids)
     graph.add_edges_from(inter_pn_unit_bonds)
 
-    # Find connected components
+    # Find connected components and sort for determinism
+    components = list(nx.connected_components(graph))
+    sorted_components = sorted(components, key=lambda c: min(c))
+
     result: dict[str, int] = {}
-    for mol_id, component in enumerate(nx.connected_components(graph)):
+    for mol_id, component in enumerate(sorted_components):
         for pn_unit_id in component:
             result[pn_unit_id] = mol_id
 
@@ -233,12 +235,10 @@ def find_molecules(
 
 
 def compute_molecule_entity_hash(
-    molecule_id: int,
     pn_unit_ids: Sequence[str],
     pn_unit_entities: Mapping[str, int],
     inter_pn_unit_bonds: Sequence[tuple[str, str]],
-    inter_level_bonds: Sequence[tuple[str, str, str, str, str, str, str, str]]
-    | None = None,
+    inter_level_bonds: Sequence[tuple[str, str, str, str, str, str, str, str]] | None = None,
 ) -> str:
     """Compute molecule entity hash using WL graph hashing.
 
@@ -248,7 +248,6 @@ def compute_molecule_entity_hash(
     - Node attribute = pn_unit_entity
 
     Args:
-        molecule_id: The molecule ID (for filtering, not used in hash).
         pn_unit_ids: List of PN unit IDs in this molecule.
         pn_unit_entities: Mapping from pn_unit_id to pn_unit_entity.
         inter_pn_unit_bonds: List of bonds between PN units in this molecule.
@@ -325,8 +324,7 @@ class EntityAssigner:
         pn_unit_id: str,
         chain_entities: Mapping[str, int],
         inter_chain_bonds: Sequence[tuple[str, str]],
-        inter_level_bonds: Sequence[tuple[str, str, str, str, str, str, str, str]]
-        | None = None,
+        inter_level_bonds: Sequence[tuple[str, str, str, str, str, str, str, str]] | None = None,
     ) -> int:
         """Assign PN unit entity ID.
 
@@ -346,17 +344,14 @@ class EntityAssigner:
 
     def assign_molecule_entity(
         self,
-        molecule_id: int,
         pn_unit_ids: Sequence[str],
         pn_unit_entities: Mapping[str, int],
         inter_pn_unit_bonds: Sequence[tuple[str, str]],
-        inter_level_bonds: Sequence[tuple[str, str, str, str, str, str, str, str]]
-        | None = None,
+        inter_level_bonds: Sequence[tuple[str, str, str, str, str, str, str, str]] | None = None,
     ) -> int:
         """Assign molecule entity ID.
 
         Args:
-            molecule_id: The molecule ID.
             pn_unit_ids: List of PN unit IDs in this molecule.
             pn_unit_entities: Mapping from pn_unit_id to pn_unit_entity.
             inter_pn_unit_bonds: List of bonds between PN units.
@@ -366,7 +361,7 @@ class EntityAssigner:
             Molecule entity ID (0-indexed integer).
         """
         hash_value = compute_molecule_entity_hash(
-            molecule_id, pn_unit_ids, pn_unit_entities, inter_pn_unit_bonds, inter_level_bonds
+            pn_unit_ids, pn_unit_entities, inter_pn_unit_bonds, inter_level_bonds
         )
         return self.molecule_entity_mapper.get_or_create(hash_value)
 
