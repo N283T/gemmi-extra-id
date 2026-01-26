@@ -24,7 +24,6 @@ from gemmi_extra_id.complete.cif_utils import (
     get_canonical_sequences,
     get_chain_info_complete,
     get_inter_chain_atom_bonds,
-    get_intra_chain_atom_bonds,
     get_intra_chain_bonds,
     get_struct_conn_bonds,
 )
@@ -353,12 +352,8 @@ def assign_extended_ids_complete(
     effective_ccd_path = ccd_path or os.environ.get("CCD_MIRROR_PATH", "")
     use_atomic_hash = bool(effective_ccd_path)
 
-    # Get intra-chain atom-level bonds for inter-level bond hash (AtomWorks compatibility)
-    # This includes bonds like "covale" that AtomWorks uses in generate_inter_level_bond_hash
-    # Exclude polymer backbone bonds (peptide bonds, phosphodiester bonds) as AtomWorks infers these
-    intra_chain_atom_bonds = get_intra_chain_atom_bonds(
-        block, covalent_types_set, ccd_path=effective_ccd_path, exclude_polymer_backbone=True
-    )
+    # Note: intra-chain atom-level bonds are not used for chain_entity hash
+    # (AtomWorks only uses them for pn_unit/molecule levels)
 
     # Get inter-chain atom-level bonds for molecule_entity inter-level bond hash
     inter_chain_atom_bonds = get_inter_chain_atom_bonds(

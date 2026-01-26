@@ -600,14 +600,10 @@ def _is_polymer_backbone_bond(
     exit_atom2, entry_atom2 = poly_atoms2
 
     # Check forward direction: comp1 exit -> comp2 entry
-    if atom1 == exit_atom1 and atom2 == entry_atom2:
-        return True
-
     # Check reverse direction: comp2 exit -> comp1 entry
-    if atom2 == exit_atom2 and atom1 == entry_atom1:
-        return True
-
-    return False
+    return (atom1 == exit_atom1 and atom2 == entry_atom2) or (
+        atom2 == exit_atom2 and atom1 == entry_atom1
+    )
 
 
 def get_intra_chain_atom_bonds(
@@ -662,9 +658,12 @@ def get_intra_chain_atom_bonds(
             continue
 
         # Skip polymer backbone bonds if requested
-        if exclude_polymer_backbone and ccd_path:
-            if _is_polymer_backbone_bond(bond.comp1, bond.atom1, bond.comp2, bond.atom2, ccd_path):
-                continue
+        if (
+            exclude_polymer_backbone
+            and ccd_path
+            and _is_polymer_backbone_bond(bond.comp1, bond.atom1, bond.comp2, bond.atom2, ccd_path)
+        ):
+            continue
 
         chain_id = bond.chain1
 
@@ -752,9 +751,12 @@ def get_inter_chain_atom_bonds(
             continue
 
         # Skip polymer backbone bonds if requested
-        if exclude_polymer_backbone and ccd_path:
-            if _is_polymer_backbone_bond(bond.comp1, bond.atom1, bond.comp2, bond.atom2, ccd_path):
-                continue
+        if (
+            exclude_polymer_backbone
+            and ccd_path
+            and _is_polymer_backbone_bond(bond.comp1, bond.atom1, bond.comp2, bond.atom2, ccd_path)
+        ):
+            continue
 
         # Create atom-level bond tuple (6-tuple)
         bond_tuple: AtomBondTuple = (

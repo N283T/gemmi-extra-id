@@ -139,11 +139,7 @@ def _check_exact_match(
 
     aw_lookup = {str(k): v for k, v in aw_values.items()}
 
-    for chain in common:
-        if gm_values[chain] != aw_lookup[chain]:
-            return False
-
-    return True
+    return all(gm_values[chain] == aw_lookup[chain] for chain in common)
 
 
 def compare_file(cif_path: Path) -> ExactMatchResult:
