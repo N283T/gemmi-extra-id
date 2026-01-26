@@ -59,12 +59,22 @@ def suppress_output():
         yield
 
 
+# Cache directory for AtomWorks parsed results
+ATOMWORKS_CACHE_DIR = Path(__file__).parent.parent / ".cache" / "atomworks"
+
+
 def get_atomworks_entities(
     cif_path: Path,
+    use_cache: bool = True,
 ) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
     """Get entity values from AtomWorks."""
     from atomworks.io.parser import parse
     from biotite.structure import AtomArrayStack
+
+    # Setup cache directory
+    cache_dir = ATOMWORKS_CACHE_DIR if use_cache else None
+    if cache_dir:
+        cache_dir.mkdir(parents=True, exist_ok=True)
 
     with suppress_output(), warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -76,6 +86,9 @@ def get_atomworks_entities(
             remove_ccds=[],  # Don't filter crystallization aids
             fix_formal_charges=False,
             add_id_and_entity_annotations=True,
+            cache_dir=cache_dir,
+            save_to_cache=use_cache,
+            load_from_cache=use_cache,
         )
 
     atom_array = result["asym_unit"]
