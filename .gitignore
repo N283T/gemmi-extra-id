@@ -13,6 +13,7 @@ wheels/
 .nox/
 .pytest_cache/
 .ruff_cache/
+.cache/
 
 # Editor
 .vscode/

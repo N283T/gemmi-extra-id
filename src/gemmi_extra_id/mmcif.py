@@ -326,24 +326,6 @@ def _get_entity_mapping(
     return result
 
 
-def _get_canonical_sequences(
-    block: gemmi.cif.Block,
-) -> dict[str, list[tuple[tuple[str, str], str]]]:
-    """Get canonical sequences from _entity_poly_seq.
-
-    Internal wrapper for backward compatibility with test scripts.
-
-    Args:
-        block: mmCIF data block.
-
-    Returns:
-        Dict mapping entity_id to list of ((seq_num, ins_code), mon_id) tuples.
-    """
-    from gemmi_extra_id.complete.cif_utils import get_canonical_sequences
-
-    return get_canonical_sequences(block)
-
-
 def _compute_extended_chain_info(
     chain_order: list[str],
     label_to_auth: dict[str, str],
@@ -583,7 +565,6 @@ def assign_extended_ids(
     output_path: str | Path | None = None,
     covalent_types: AbstractSet[str] | None = None,
     use_hash: bool = False,
-    mode: str = "loose",
 ) -> AssignmentResult:
     """
     Assign all extended IDs to mmCIF file based on covalent connectivity.
@@ -600,10 +581,8 @@ def assign_extended_ids(
         output_path: Path to output mmCIF file. If None, no file is written.
         covalent_types: Set of conn_type_id values to treat as covalent bonds.
             Defaults to {"covale", "disulf"}.
-        use_hash: If True, compute entity IDs using Weisfeiler-Lehman graph hashing
-            (AtomWorks compatible). Requires networkx. Defaults to False.
-        mode: Entity assignment mode. "loose" (default) uses fast approximation.
-            "complete" uses AtomWorks-compatible algorithm (not yet implemented).
+        use_hash: If True, compute entity IDs using Weisfeiler-Lehman graph hashing.
+            Requires networkx. Defaults to False.
 
     Returns:
         AssignmentResult containing ChainInfo for each chain.
@@ -612,14 +591,7 @@ def assign_extended_ids(
         ValueError: If required mmCIF tags are missing.
         FileNotFoundError: If input file does not exist.
         ImportError: If use_hash=True but networkx is not installed.
-        NotImplementedError: If mode="complete" (not yet implemented).
     """
-    # Check mode
-    if mode == "complete":
-        raise NotImplementedError(
-            "Complete mode is not yet implemented. "
-            "Use default loose mode for now, or use use_hash=True for partial compatibility."
-        )
     if covalent_types is None:
         covalent_types = DEFAULT_COVALENT_TYPES
     else:

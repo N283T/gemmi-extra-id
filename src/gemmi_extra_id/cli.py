@@ -49,13 +49,6 @@ class OutputFormat(str, Enum):
     tree = "tree"
 
 
-class Mode(str, Enum):
-    """Entity assignment mode options."""
-
-    loose = "loose"
-    complete = "complete"
-
-
 def version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
@@ -131,48 +124,15 @@ def assign(
         typer.Option(
             "--hash-entities",
             "-H",
-            help="Use Weisfeiler-Lehman graph hashing for entity IDs (AtomWorks compatible). "
+            help="Use Weisfeiler-Lehman graph hashing for entity IDs. "
             "Requires networkx: pip install gemmi-extra-id[hash]",
         ),
     ] = False,
-    mode: Annotated[
-        Mode,
-        typer.Option(
-            "--mode",
-            "-m",
-            help="Entity assignment mode: loose (fast, default) or complete "
-            "(AtomWorks compatible). Requires networkx: pip install gemmi-extra-id[complete]",
-        ),
-    ] = Mode.loose,
 ) -> None:
     """Assign molecule_id to an mmCIF file based on covalent connectivity."""
     covalent_types = {t.strip().lower() for t in conn_types.split(",") if t.strip()}
 
-    # Handle complete mode
-    if mode == Mode.complete:
-        try:
-            from gemmi_extra_id.complete import assign_extended_ids_complete
-        except ImportError:
-            err_console.print(
-                "[red]Error:[/red] Complete mode requires networkx. "
-                "Install with: pip install gemmi-extra-id[complete]"
-            )
-            raise typer.Exit(1) from None
-
-        try:
-            # Complete mode always uses extended output
-            result = assign_extended_ids_complete(input_file, None, covalent_types)
-            # TODO(Phase 2+): Handle result - write output, display stats
-            # For now, this is unreachable as stub raises NotImplementedError
-            raise typer.Exit(0)
-        except NotImplementedError as e:
-            err_console.print(f"[red]Error:[/red] {e}")
-            raise typer.Exit(1) from None
-        except ValueError as e:
-            err_console.print(f"[red]Error:[/red] {e}")
-            raise typer.Exit(1) from None
-
-    # Tree format requires extended mode (loose mode only from here)
+    # Tree format requires extended mode
     if fmt == OutputFormat.tree:
         extended = True
 
