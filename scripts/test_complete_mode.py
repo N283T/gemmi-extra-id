@@ -73,6 +73,7 @@ def get_atomworks_entities(
             build_assembly=None,
             add_missing_atoms=True,
             remove_waters=False,
+            remove_ccds=[],  # Don't filter crystallization aids
             fix_formal_charges=False,
             add_id_and_entity_annotations=True,
         )
