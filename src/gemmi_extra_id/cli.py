@@ -162,7 +162,9 @@ def assign(
         try:
             # Complete mode always uses extended output
             result = assign_extended_ids_complete(input_file, None, covalent_types)
-            # This will raise NotImplementedError for now
+            # TODO(Phase 2+): Handle result - write output, display stats
+            # For now, this is unreachable as stub raises NotImplementedError
+            raise typer.Exit(0)
         except NotImplementedError as e:
             err_console.print(f"[red]Error:[/red] {e}")
             raise typer.Exit(1) from None
@@ -170,7 +172,7 @@ def assign(
             err_console.print(f"[red]Error:[/red] {e}")
             raise typer.Exit(1) from None
 
-    # Tree format requires extended mode
+    # Tree format requires extended mode (loose mode only from here)
     if fmt == OutputFormat.tree:
         extended = True
 
