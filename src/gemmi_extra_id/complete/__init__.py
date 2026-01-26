@@ -84,10 +84,7 @@ def _get_residues_from_atom_site(
             continue
 
         # For water, use auth_seq_id; otherwise use label_seq_id
-        if use_auth_seq:
-            seq_id = loop[row_idx, auth_seq_idx]
-        else:
-            seq_id = loop[row_idx, seq_idx]
+        seq_id = loop[row_idx, auth_seq_idx] if use_auth_seq else loop[row_idx, seq_idx]
 
         ins_code = loop[row_idx, ins_idx] if ins_idx is not None else "."
         comp_id = loop[row_idx, comp_idx]
