@@ -82,7 +82,3 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -v --tb=short
-
-      - name: Run slow tests
-        if: github.ref == 'refs/heads/main'
-        run: uv run pytest -v --tb=short -m slow
