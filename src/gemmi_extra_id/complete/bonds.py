@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, Final
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-# Type alias for residue key (seq_id, ins_code)
-ResKey = tuple[str, str]
+# Import ResKey from cif_utils to avoid duplication
+from gemmi_extra_id.complete.cif_utils import ResKey
 
 # =============================================================================
 # Chemical Component Type Constants (from AtomWorks)
@@ -189,7 +189,6 @@ def is_dna_like(chem_type: str) -> bool:
 
 
 __all__ = [
-    "ResKey",
     "AA_LIKE_CHEM_TYPES",
     "RNA_LIKE_CHEM_TYPES",
     "DNA_LIKE_CHEM_TYPES",
