@@ -29,6 +29,9 @@ cli = [
 hash = [
     "networkx>=3.0",
 ]
+complete = [
+    "networkx>=3.0",
+]
 
 
 [project.scripts]

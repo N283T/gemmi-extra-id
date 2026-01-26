@@ -375,6 +375,9 @@ cli = [
     { name = "rich" },
     { name = "typer" },
 ]
+complete = [
+    { name = "networkx" },
+]
 hash = [
     { name = "networkx" },
 ]
@@ -402,11 +405,12 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "gemmi", specifier = ">=0.7.4" },
+    { name = "networkx", marker = "extra == 'complete'", specifier = ">=3.0" },
     { name = "networkx", marker = "extra == 'hash'", specifier = ">=3.0" },
     { name = "rich", marker = "extra == 'cli'", specifier = ">=13.0" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12" },
 ]
-provides-extras = ["cli", "hash"]
+provides-extras = ["cli", "hash", "complete"]
 
 [package.metadata.requires-dev]
 dev = [

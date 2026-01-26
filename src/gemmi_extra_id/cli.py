@@ -49,6 +49,13 @@ class OutputFormat(str, Enum):
     tree = "tree"
 
 
+class Mode(str, Enum):
+    """Entity assignment mode options."""
+
+    loose = "loose"
+    complete = "complete"
+
+
 def version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
@@ -128,9 +135,40 @@ def assign(
             "Requires networkx: pip install gemmi-extra-id[hash]",
         ),
     ] = False,
+    mode: Annotated[
+        Mode,
+        typer.Option(
+            "--mode",
+            "-m",
+            help="Entity assignment mode: loose (fast, default) or complete "
+            "(AtomWorks compatible). Requires networkx: pip install gemmi-extra-id[complete]",
+        ),
+    ] = Mode.loose,
 ) -> None:
     """Assign molecule_id to an mmCIF file based on covalent connectivity."""
     covalent_types = {t.strip().lower() for t in conn_types.split(",") if t.strip()}
+
+    # Handle complete mode
+    if mode == Mode.complete:
+        try:
+            from gemmi_extra_id.complete import assign_extended_ids_complete
+        except ImportError:
+            err_console.print(
+                "[red]Error:[/red] Complete mode requires networkx. "
+                "Install with: pip install gemmi-extra-id[complete]"
+            )
+            raise typer.Exit(1) from None
+
+        try:
+            # Complete mode always uses extended output
+            result = assign_extended_ids_complete(input_file, None, covalent_types)
+            # This will raise NotImplementedError for now
+        except NotImplementedError as e:
+            err_console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1) from None
+        except ValueError as e:
+            err_console.print(f"[red]Error:[/red] {e}")
+            raise typer.Exit(1) from None
 
     # Tree format requires extended mode
     if fmt == OutputFormat.tree:
