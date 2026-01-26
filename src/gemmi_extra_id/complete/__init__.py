@@ -115,6 +115,68 @@ def _get_atoms_from_atom_site(
     return atom_names, elements, res_names, res_ids, chem_types
 
 
+def _get_residue_sequence_from_atom_site(
+    block: gemmi.cif.Block,
+    chain_id: str,
+) -> list[tuple[int, str]]:
+    """Get residue sequence from _atom_site for a chain.
+
+    Returns:
+        List of (res_id, res_name) tuples for each residue.
+    """
+    result: list[tuple[int, str]] = []
+    seen: set[tuple[int, str]] = set()
+
+    label_col = block.find_loop("_atom_site.label_asym_id")
+    if not label_col:
+        return result
+
+    loop = label_col.get_loop()
+    if not loop:
+        return result
+
+    tags = list(loop.tags)
+
+    def get_idx(tag: str) -> int | None:
+        return tags.index(tag) if tag in tags else None
+
+    asym_idx = get_idx("_atom_site.label_asym_id")
+    comp_idx = get_idx("_atom_site.label_comp_id")
+    seq_idx = get_idx("_atom_site.label_seq_id")
+
+    if asym_idx is None or comp_idx is None:
+        return result
+
+    # Track current residue number for non-polymer
+    current_res_num = 0
+    prev_key: tuple[str, str] | None = None
+
+    for row_idx in range(loop.length()):
+        if loop[row_idx, asym_idx] != chain_id:
+            continue
+
+        res_name = loop[row_idx, comp_idx]
+        seq_id = loop[row_idx, seq_idx] if seq_idx is not None else "."
+
+        # Assign residue ID
+        try:
+            res_id = int(seq_id)
+        except ValueError:
+            # Non-numeric seq_id: use incremental numbering
+            key = (seq_id, res_name)
+            if key != prev_key:
+                current_res_num += 1
+            res_id = current_res_num
+            prev_key = key
+
+        entry = (res_id, res_name)
+        if entry not in seen:
+            seen.add(entry)
+            result.append(entry)
+
+    return result
+
+
 def _get_residues_from_atom_site(
     block: gemmi.cif.Block,
     chain_id: str,
@@ -300,23 +362,28 @@ def assign_extended_ids_complete(
         entity_id = meta.entity_id
 
         if use_atomic_hash:
-            # Use atomic-level hashing with CCD bond information
-            atom_names, elements, res_names, res_ids, chem_types = _get_atoms_from_atom_site(
-                block, chain_id
-            )
+            # Use atomic-level hashing with CCD template atoms (normalized)
+            # This ensures chains with same sequence have identical hashes
 
-            if not atom_names:
+            # For polymer chains, use canonical sequence from _entity_poly_seq
+            # For non-polymer, use atom_site
+            if entity_id in entity_sequences and entity_sequences[entity_id]:
+                # Use canonical sequence (numbered from 1)
+                canon_seq = entity_sequences[entity_id]
+                residue_sequence = [(i + 1, mon_id) for i, (_, mon_id) in enumerate(canon_seq)]
+            else:
+                # Fallback to atom_site for non-polymer chains
+                residue_sequence = _get_residue_sequence_from_atom_site(block, chain_id)
+
+            if not residue_sequence:
                 # Empty chain
-                chain_entities[chain_id] = assigner.assign_chain_entity_atomic(
-                    [], [], [], [], None, effective_ccd_path
+                chain_entities[chain_id] = assigner.assign_chain_entity_normalized(
+                    [], None, effective_ccd_path
                 )
             else:
-                chain_entities[chain_id] = assigner.assign_chain_entity_atomic(
-                    atom_names=atom_names,
-                    elements=elements,
-                    res_names=res_names,
-                    res_ids=res_ids,
-                    chem_types=chem_types if chem_types else None,
+                chain_entities[chain_id] = assigner.assign_chain_entity_normalized(
+                    residue_sequence=residue_sequence,
+                    chem_types=None,  # Could extract from entity_poly if needed
                     ccd_path=effective_ccd_path,
                 )
         else:

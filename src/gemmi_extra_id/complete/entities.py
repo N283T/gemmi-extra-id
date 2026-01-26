@@ -126,6 +126,41 @@ def compute_chain_atom_entity_hash(
     )
 
 
+def compute_chain_atom_entity_hash_normalized(
+    residue_sequence: Sequence[tuple[int, str]],
+    chem_types: Sequence[str] | None = None,
+    ccd_path: str = "",
+) -> str:
+    """Compute chain entity hash using CCD template atoms.
+
+    This uses CCD templates to normalize atom lists, ensuring that
+    chains with the same residue sequence have identical hashes regardless
+    of which atoms are actually present in the structure.
+
+    This is equivalent to AtomWorks behavior with add_missing_atoms=True.
+
+    Args:
+        residue_sequence: List of (res_id, res_name) tuples for each residue.
+        chem_types: Chemical types per residue (optional).
+        ccd_path: Path to CCD mirror directory.
+
+    Returns:
+        WL hash string for the chain entity at atomic level.
+    """
+    _check_networkx()
+
+    if not residue_sequence:
+        return ""
+
+    from gemmi_extra_id.complete.atom_hash import compute_chain_atom_hash_normalized
+
+    return compute_chain_atom_hash_normalized(
+        residue_sequence=residue_sequence,
+        chem_types=chem_types,
+        ccd_path=ccd_path,
+    )
+
+
 def find_pn_units(
     chain_ids: Sequence[str],
     is_polymer: Mapping[str, bool],
@@ -394,6 +429,35 @@ class EntityAssigner:
         )
         return self.chain_entity_mapper.get_or_create(hash_value)
 
+    def assign_chain_entity_normalized(
+        self,
+        residue_sequence: Sequence[tuple[int, str]],
+        chem_types: Sequence[str] | None = None,
+        ccd_path: str = "",
+    ) -> int:
+        """Assign chain entity ID using CCD template atoms.
+
+        This normalizes atom lists using CCD templates, ensuring chains with
+        the same residue sequence have identical hashes regardless of which
+        atoms are actually present in the structure.
+
+        This is equivalent to AtomWorks behavior with add_missing_atoms=True.
+
+        Args:
+            residue_sequence: List of (res_id, res_name) tuples for each residue.
+            chem_types: Chemical types per residue (optional).
+            ccd_path: Path to CCD mirror directory.
+
+        Returns:
+            Chain entity ID (0-indexed integer).
+        """
+        hash_value = compute_chain_atom_entity_hash_normalized(
+            residue_sequence=residue_sequence,
+            chem_types=chem_types,
+            ccd_path=ccd_path,
+        )
+        return self.chain_entity_mapper.get_or_create(hash_value)
+
     def assign_pn_unit_entity(
         self,
         pn_unit_id: str,
@@ -450,6 +514,7 @@ class EntityAssigner:
 __all__ = [
     "compute_chain_entity_hash",
     "compute_chain_atom_entity_hash",
+    "compute_chain_atom_entity_hash_normalized",
     "compute_pn_unit_entity_hash",
     "compute_molecule_entity_hash",
     "find_pn_units",
