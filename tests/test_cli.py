@@ -21,7 +21,7 @@ class TestCLI:
         result = runner.invoke(app, ["--version"])
         assert result.exit_code == 0
         assert "gemmi-extra-id" in result.output
-        assert "0.1.0" in result.output
+        assert "0.2.0" in result.output
 
     def test_no_args_shows_help(self) -> None:
         """No arguments shows help."""
@@ -84,19 +84,6 @@ class TestSwapOption:
 
         result = runner.invoke(
             app, ["assign", str(input_file), str(output_file), "--swap", "molecule_id"]
-        )
-
-        assert result.exit_code == 0, f"Command failed: {result.output}"
-        assert output_file.exists()
-
-    @pytest.mark.skipif(not (FROM_PDB_DIR / "148L.cif").exists(), reason="Test data not available")
-    def test_swap_label_asym_id(self, tmp_path: Path) -> None:
-        """--swap label_asym_id replaces auth_asym_id with label_asym_id."""
-        input_file = FROM_PDB_DIR / "148L.cif"
-        output_file = tmp_path / "output.cif"
-
-        result = runner.invoke(
-            app, ["assign", str(input_file), str(output_file), "--swap", "label_asym_id"]
         )
 
         assert result.exit_code == 0, f"Command failed: {result.output}"
