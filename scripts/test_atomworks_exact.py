@@ -100,69 +100,24 @@ def get_atomworks_entities(
 def get_gemmi_hash_entities(
     cif_path: Path,
 ) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
-    """Get hash-based entity values from gemmi-extra-id.
+    """Get hash-based entity values from gemmi-extra-id complete mode.
 
-    Uses canonical sequences for polymer chains (current implementation).
+    Uses the complete mode implementation which includes inter-level bond hashing
+    for AtomWorks compatibility.
     """
-    import gemmi
+    from gemmi_extra_id.complete import assign_extended_ids_complete
 
-    from gemmi_extra_id.graph import find_components, find_pn_units
-    from gemmi_extra_id.graph_hash import compute_hash_entities
-    from gemmi_extra_id.mmcif import (
-        _get_canonical_sequences,
-        _get_chain_info,
-        _get_covalent_edges,
-        _get_entity_mapping,
-        _get_residue_bonds,
-        _get_residue_info,
-    )
+    # Use complete mode for AtomWorks-compatible entity assignment
+    result = assign_extended_ids_complete(cif_path)
 
-    doc = gemmi.cif.read(str(cif_path))
-    block = doc.sole_block()
+    chain_entity: dict[str, int] = {}
+    pn_unit_entity: dict[str, int] = {}
+    molecule_entity: dict[str, int] = {}
 
-    atom_site_col = block.find_loop("_atom_site.label_asym_id")
-    atom_site_loop = atom_site_col.get_loop()
-
-    chain_order, _, _ = _get_chain_info(atom_site_loop)
-    covalent_types = frozenset({"covale"})
-    edges = _get_covalent_edges(block, covalent_types)
-    entity_mapping = _get_entity_mapping(block)
-
-    chain_residues, residue_names = _get_residue_info(atom_site_loop)
-    intra_chain_bonds, inter_chain_bonds = _get_residue_bonds(block, covalent_types)
-
-    # Get canonical sequences for polymer chains
-    canonical_sequences = _get_canonical_sequences(block)
-
-    # For polymer chains, use canonical sequence
-    entity_types = {chain: entity_mapping.get(chain, ("?", "unknown"))[1] for chain in chain_order}
-    for chain in chain_order:
-        entity_id, entity_type = entity_mapping.get(chain, ("?", "unknown"))
-        if entity_type == "polymer" and entity_id in canonical_sequences:
-            canon_seq = canonical_sequences[entity_id]
-            chain_residues[chain] = [res_key for res_key, _ in canon_seq]
-            residue_names[chain] = {res_key: mon_id for res_key, mon_id in canon_seq}
-            if len(canon_seq) > 1:
-                polymer_bonds = []
-                for i in range(len(canon_seq) - 1):
-                    res_key_a = canon_seq[i][0]
-                    res_key_b = canon_seq[i + 1][0]
-                    polymer_bonds.append((res_key_a, res_key_b))
-                intra_chain_bonds[chain] = polymer_bonds
-
-    molecule_mapping = find_components(chain_order, edges)
-    is_polymer = {chain: entity_types.get(chain, "unknown") == "polymer" for chain in chain_order}
-    pn_unit_mapping = find_pn_units(chain_order, edges, entity_types, is_polymer)
-
-    chain_entity, pn_unit_entity, molecule_entity = compute_hash_entities(
-        chain_order=chain_order,
-        molecule_mapping=molecule_mapping,
-        pn_unit_mapping=pn_unit_mapping,
-        chain_residues=chain_residues,
-        residue_names=residue_names,
-        intra_chain_bonds=intra_chain_bonds,
-        inter_chain_bonds=inter_chain_bonds,
-    )
+    for chain_id, info in result.chain_info.items():
+        chain_entity[chain_id] = int(info.chain_entity)
+        pn_unit_entity[chain_id] = int(info.pn_unit_entity)
+        molecule_entity[chain_id] = int(info.molecule_entity)
 
     return chain_entity, pn_unit_entity, molecule_entity
 
@@ -184,11 +139,7 @@ def _check_exact_match(
 
     aw_lookup = {str(k): v for k, v in aw_values.items()}
 
-    for chain in common:
-        if gm_values[chain] != aw_lookup[chain]:
-            return False
-
-    return True
+    return all(gm_values[chain] == aw_lookup[chain] for chain in common)
 
 
 def compare_file(cif_path: Path) -> ExactMatchResult:

@@ -16,12 +16,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import gemmi
+import numpy as np
 
 from gemmi_extra_id.complete.bonds import get_inferred_polymer_bonds
 from gemmi_extra_id.complete.cif_utils import (
     ResKey,
     get_canonical_sequences,
     get_chain_info_complete,
+    get_inter_chain_atom_bonds,
     get_intra_chain_bonds,
     get_struct_conn_bonds,
 )
@@ -297,7 +299,9 @@ def assign_extended_ids_complete(
         input_path: Path to input mmCIF file.
         output_path: Path to output mmCIF file. If None, no file is written.
         covalent_types: Set of conn_type_id values to treat as covalent bonds.
-            Defaults to {"covale", "disulf"}.
+            Defaults to {"covale"}. Note: disulf bonds are excluded by default
+            to match AtomWorks behavior where disulfide bonds don't affect
+            molecule connectivity or entity hashing.
         ccd_path: Path to CCD mirror directory. If provided, uses atomic-level
             hashing with CCD bond information for more accurate entity matching.
             Can also be set via CCD_MIRROR_PATH environment variable.
@@ -317,9 +321,10 @@ def assign_extended_ids_complete(
             "Complete mode requires networkx. Install with: pip install gemmi-extra-id[complete]"
         ) from e
 
-    # Default covalent types
+    # Default covalent types - only "covale" to match AtomWorks behavior
+    # AtomWorks excludes disulfide bonds from molecule connectivity and entity hashing
     if covalent_types is None:
-        covalent_types = {"covale", "disulf"}
+        covalent_types = {"covale"}
     covalent_types_set = {t.lower() for t in covalent_types}
 
     # Read CIF file
@@ -342,15 +347,24 @@ def assign_extended_ids_complete(
     # Get intra-chain bonds (disulfide, etc.) for chain_entity calculation
     intra_chain_struct_conn = get_intra_chain_bonds(block, covalent_types_set)
 
+    # Determine CCD path (parameter takes precedence over environment variable)
+    # Need this early for polymer backbone bond filtering
+    effective_ccd_path = ccd_path or os.environ.get("CCD_MIRROR_PATH", "")
+    use_atomic_hash = bool(effective_ccd_path)
+
+    # Note: intra-chain atom-level bonds are not used for chain_entity hash
+    # (AtomWorks only uses them for pn_unit/molecule levels)
+
+    # Get inter-chain atom-level bonds for molecule_entity inter-level bond hash
+    inter_chain_atom_bonds = get_inter_chain_atom_bonds(
+        block, covalent_types_set, ccd_path=effective_ccd_path, exclude_polymer_backbone=True
+    )
+
     # Build entity_id -> canonical sequence mapping
     entity_sequences: dict[str, list[tuple[ResKey, str]]] = canonical_sequences
 
     # Initialize entity assigner
     assigner = EntityAssigner()
-
-    # Determine CCD path (parameter takes precedence over environment variable)
-    effective_ccd_path = ccd_path or os.environ.get("CCD_MIRROR_PATH", "")
-    use_atomic_hash = bool(effective_ccd_path)
 
     # Build auth_asym_id mapping once (O(m) total, not O(n*m))
     auth_asym_mapping: dict[str, str] = {}
@@ -368,7 +382,9 @@ def assign_extended_ids_complete(
                         auth_asym_mapping[label] = loop[row_idx, auth_idx]
 
     # Process each chain to compute chain_entity
-    chain_ids = list(chain_metadata.keys())
+    # Sort chain IDs using numpy's sort order to match AtomWorks behavior
+    # np.unique returns sorted values lexicographically ('AA' comes after 'A' but before 'B')
+    chain_ids = [str(x) for x in np.sort(list(chain_metadata.keys()))]
     chain_entities: dict[str, int] = {}
 
     for chain_id in chain_ids:
@@ -391,16 +407,21 @@ def assign_extended_ids_complete(
                     block, chain_id, meta.entity_type
                 )
 
+            # Note: Inter-level bonds (from struct_conn) are NOT included in chain_entity hash.
+            # AtomWorks only uses them for pn_unit_entity and molecule_entity levels.
+            # Chain entity is determined purely by residue sequence and atom composition.
+
             if not residue_sequence:
                 # Empty chain
                 chain_entities[chain_id] = assigner.assign_chain_entity_normalized(
-                    [], None, effective_ccd_path
+                    [], None, effective_ccd_path, inter_level_bonds=None
                 )
             else:
                 chain_entities[chain_id] = assigner.assign_chain_entity_normalized(
                     residue_sequence=residue_sequence,
                     chem_types=None,  # Could extract from entity_poly if needed
                     ccd_path=effective_ccd_path,
+                    inter_level_bonds=None,
                 )
         else:
             # Use residue-level hashing (original behavior)
@@ -488,8 +509,32 @@ def assign_extended_ids_complete(
             (a, b) for a, b in inter_pn_unit_bonds if a in mol_pn_set and b in mol_pn_set
         ]
 
+        # Build inter-level bonds for molecule entity (8-tuple format)
+        # (pn_unit_entity1, res_id1, res_name1, atom_name1,
+        #  pn_unit_entity2, res_id2, res_name2, atom_name2)
+        mol_inter_level_bonds: list[tuple[str, str, str, str, str, str, str, str]] = []
+        for chain1, chain2, bond_tuple in inter_chain_atom_bonds:
+            pn1 = pn_unit_mapping.get(chain1)
+            pn2 = pn_unit_mapping.get(chain2)
+            # Only include bonds between different PN units within this molecule
+            if pn1 and pn2 and pn1 != pn2 and pn1 in mol_pn_set and pn2 in mol_pn_set:
+                # bond_tuple is (res_id1, res_name1, atom_name1, res_id2, res_name2, atom_name2)
+                res_id1, res_name1, atom_name1, res_id2, res_name2, atom_name2 = bond_tuple
+                # Create 8-tuple with pn_unit_entity values
+                inter_bond: tuple[str, str, str, str, str, str, str, str] = (
+                    str(pn_unit_entities[pn1]),
+                    str(res_id1),
+                    res_name1,
+                    atom_name1,
+                    str(pn_unit_entities[pn2]),
+                    str(res_id2),
+                    res_name2,
+                    atom_name2,
+                )
+                mol_inter_level_bonds.append(inter_bond)
+
         molecule_entities[mol_id] = assigner.assign_molecule_entity(
-            pn_units, pn_unit_entities, mol_inter_bonds
+            pn_units, pn_unit_entities, mol_inter_bonds, mol_inter_level_bonds or None
         )
 
     # Build ChainInfo for each chain

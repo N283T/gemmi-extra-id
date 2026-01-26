@@ -130,6 +130,7 @@ def compute_chain_atom_entity_hash_normalized(
     residue_sequence: Sequence[tuple[int, str]],
     chem_types: Sequence[str] | None = None,
     ccd_path: str = "",
+    inter_level_bonds: Sequence[tuple[str, str, str, str, str, str]] | None = None,
 ) -> str:
     """Compute chain entity hash using CCD template atoms.
 
@@ -143,6 +144,8 @@ def compute_chain_atom_entity_hash_normalized(
         residue_sequence: List of (res_id, res_name) tuples for each residue.
         chem_types: Chemical types per residue (optional).
         ccd_path: Path to CCD mirror directory.
+        inter_level_bonds: Optional list of atom-level bond tuples for inter-level hash.
+            Each tuple: (res_id1, res_name1, atom_name1, res_id2, res_name2, atom_name2)
 
     Returns:
         WL hash string for the chain entity at atomic level.
@@ -154,11 +157,19 @@ def compute_chain_atom_entity_hash_normalized(
 
     from gemmi_extra_id.complete.atom_hash import compute_chain_atom_hash_normalized
 
-    return compute_chain_atom_hash_normalized(
+    base_hash = compute_chain_atom_hash_normalized(
         residue_sequence=residue_sequence,
         chem_types=chem_types,
         ccd_path=ccd_path,
     )
+
+    # Add inter-level bond hash if provided
+    if inter_level_bonds:
+        inter_hash = generate_inter_level_bond_hash(inter_level_bonds)
+        if inter_hash:
+            base_hash += inter_hash
+
+    return base_hash
 
 
 def find_pn_units(
@@ -434,6 +445,7 @@ class EntityAssigner:
         residue_sequence: Sequence[tuple[int, str]],
         chem_types: Sequence[str] | None = None,
         ccd_path: str = "",
+        inter_level_bonds: Sequence[tuple[str, str, str, str, str, str]] | None = None,
     ) -> int:
         """Assign chain entity ID using CCD template atoms.
 
@@ -447,6 +459,9 @@ class EntityAssigner:
             residue_sequence: List of (res_id, res_name) tuples for each residue.
             chem_types: Chemical types per residue (optional).
             ccd_path: Path to CCD mirror directory.
+            inter_level_bonds: Optional list of atom-level bond tuples for inter-level hash.
+                Each tuple: (res_id1, res_name1, atom_name1, res_id2, res_name2, atom_name2)
+                This matches AtomWorks's generate_inter_level_bond_hash() behavior.
 
         Returns:
             Chain entity ID (0-indexed integer).
@@ -455,6 +470,7 @@ class EntityAssigner:
             residue_sequence=residue_sequence,
             chem_types=chem_types,
             ccd_path=ccd_path,
+            inter_level_bonds=inter_level_bonds,
         )
         return self.chain_entity_mapper.get_or_create(hash_value)
 
