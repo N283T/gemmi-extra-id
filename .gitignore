@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# Tool caches
+.nox/
+.pytest_cache/
+.ruff_cache/
+.cache/
+
+# Editor
+.vscode/
+
+# External reference repositories
+atomworks/
+gemmi/
+
+# Generated outputs
+*_molid.cif
+*_molid.json
+*_molid.csv
+*_molid.tsv
+*_molid.tree
+
+# Test CIF data (downloaded from PDB in CI)
+tests/data/from_pdb/
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Work plans and notes
+plans/
+
+# Test results
+results*.json
+test*.log
+test_output.txt
+.env

@@ -1,0 +1,81 @@
+[project]
+name = "gemmi-extra-id"
+version = "0.2.0"
+description = "Assign molecule_id to mmCIF files using Gemmi"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+keywords = ["mmcif", "crystallography", "structural-biology", "gemmi", "molecule-id", "atomworks"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+]
+dependencies = [
+    "gemmi>=0.7.4",
+]
+
+[project.optional-dependencies]
+cli = [
+    "typer>=0.12",
+    "rich>=13.0",
+]
+
+
+[project.scripts]
+gemmi-extra-id = "gemmi_extra_id.cli:app"
+
+[project.urls]
+Repository = "https://github.com/nagaet/gemmi-extra-id"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gemmi_extra_id"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-ra", "-q", "-m", "not slow"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+exclude = ["atomworks", "gemmi"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+
+[dependency-groups]
+test = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "ty>=0.0.1a4",
+]
+ref = [
+    "atomworks>=2.2.0",
+]
+nox = [
+    "nox>=2024.4",
+]
+dev = [
+    { include-group = "test" },
+    { include-group = "ref" },
+    { include-group = "nox" },
+    "python-dotenv>=1.2.1",
+]
