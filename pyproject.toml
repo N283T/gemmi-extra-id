@@ -83,4 +83,5 @@ dev = [
     { include-group = "test" },
     { include-group = "ref" },
     { include-group = "nox" },
+    "python-dotenv>=1.2.1",
 ]
